@@ -11,26 +11,31 @@ AS := $(TOOLCHAIN)-as
 SEL4CP_TOOL := $(SEL4CP_SDK)/bin/sel4cp
 BOARD_DIR := $(SEL4CP_SDK)/board/$(BOARD)/$(SEL4CP_CONFIG)
 
-CFLAGS := -mcpu=$(CPU) -mstrict-align -nostdlib -ffreestanding -g3 -Wall -Wno-array-bounds -Wno-unused-variable -Wno-unused-function -Werror -I$(BOARD_DIR)/include -DBOARD_$(BOARD)
+CFLAGS := -mcpu=$(CPU) -mstrict-align -nostdlib -ffreestanding -g3 -O3 -Wall -Wno-array-bounds -Wno-unused-variable -Wno-unused-function -Werror -I$(BOARD_DIR)/include -DBOARD_$(BOARD)
 LDFLAGS := -L$(BOARD_DIR)/lib
 LIBS := -lsel4cp -Tsel4cp.ld
 
 IMAGE_FILE = $(BUILD_DIR)/loader.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
+IMAGES = hello_world.elf root.elf crasher.elf
 
-all: directories $(BUILD_DIR)/hello_world.elf system.img
+
+all: directories $(IMAGE_FILE)
 
 directories:
 	$(info $(shell mkdir -p $(BUILD_DIR)))
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
-	
-$(BUILD_DIR)/hello_world.elf: $(BUILD_DIR)/hello_world.o
+
+$(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+# $(BUILD_DIR)/hello_world.elf: $(BUILD_DIR)/hello_world.o
+#	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 	
-system.img: $(BUILD_DIR)/hello_world.elf configuration.system
+$(IMAGE_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) configuration.system
 	$(SEL4CP_TOOL) configuration.system --search-path $(BUILD_DIR) --board $(BOARD) --config $(SEL4CP_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
 
 run: $(IMAGE_FILE)
