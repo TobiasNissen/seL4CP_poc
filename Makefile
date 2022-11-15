@@ -3,7 +3,7 @@ SEL4CP_CONFIG := debug
 BUILD_DIR := build
 TOOLCHAIN := aarch64-linux-gnu
 CPU := cortex-a53
-SEL4CP_SDK := ./sel4cp_sdk
+SEL4CP_SDK := ./sel4cp-sdk-1.2.6
 
 CC := $(TOOLCHAIN)-gcc
 LD := $(TOOLCHAIN)-ld
@@ -35,3 +35,4 @@ system.img: $(BUILD_DIR)/hello_world.elf configuration.system
 
 run: $(IMAGE_FILE)
 	qemu-system-aarch64 -machine virt -cpu $(CPU) -serial mon:stdio -device loader,file=$(IMAGE_FILE),addr=0x70000000,cpu-num=0 -m size=1G -nographic
+	
