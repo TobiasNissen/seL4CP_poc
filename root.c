@@ -49,7 +49,7 @@ fault(sel4cp_pd pd, sel4cp_msginfo msginfo)
     sel4cp_dbg_puts("\n");
     restart_count++;
     if (restart_count < 10) {
-        sel4cp_pd_restart(pd, 0x200000);
+        sel4cp_pd_restart(pd, 0x200000); // The entry point address can be found in the ELF header.
         sel4cp_dbg_puts("root: restarted\n");
     } else {
         sel4cp_pd_stop(pd);

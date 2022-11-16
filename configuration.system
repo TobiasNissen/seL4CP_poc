@@ -2,13 +2,8 @@
 <system>
     <protection_domain name="root" priority="254">
     	<program_image path="root.elf" />
-	
-    	<protection_domain name="crasher" priority="253" pd_id="1">
-	    <program_image path="crasher.elf" />
-    	</protection_domain>
     	
-    	<protection_domain name="hello_world" priority="253" pd_id="2">
-            <program_image path="hello_world.elf" />
+    	<protection_domain name="empty" priority="253" pd_id="1">
         </protection_domain>
     </protection_domain>
 </system>

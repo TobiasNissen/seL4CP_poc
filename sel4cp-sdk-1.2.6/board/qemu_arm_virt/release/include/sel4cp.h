@@ -128,3 +128,4 @@ sel4cp_mr_get(uint8_t mr)
 {
     return seL4_GetMR(mr);
 }
+
