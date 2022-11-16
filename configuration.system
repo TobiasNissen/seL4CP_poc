@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <system>
-    <protection_domain name="root" priority="254">
+    <memory_region name="UART" size="0x1000" phys_addr="0x9000000"/>
+    
+    <protection_domain name="root" priority="253">
     	<program_image path="root.elf" />
+        <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false" setvar_vaddr="uart_base_vaddr"/>
+        <irq irq="33" id="0"/>
     	
-    	<protection_domain name="empty" priority="253" pd_id="1">
+    	<protection_domain name="empty" priority="254" pd_id="1">
         </protection_domain>
     </protection_domain>
 </system>

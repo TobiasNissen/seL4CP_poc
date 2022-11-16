@@ -31,13 +31,11 @@ $(BUILD_DIR)/%.o: %.c Makefile
 
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
-
-# $(BUILD_DIR)/hello_world.elf: $(BUILD_DIR)/hello_world.o
-#	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 	
 $(IMAGE_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) configuration.system
 	$(SEL4CP_TOOL) configuration.system --search-path $(BUILD_DIR) --board $(BOARD) --config $(SEL4CP_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
 
 run: $(IMAGE_FILE)
-	qemu-system-aarch64 -machine virt -cpu $(CPU) -serial mon:stdio -device loader,file=$(IMAGE_FILE),addr=0x70000000,cpu-num=0 -m size=1G -nographic
+	qemu-system-aarch64 -machine virt -cpu $(CPU) -serial pty -device loader,file=$(IMAGE_FILE),addr=0x70000000,cpu-num=0 -m size=1G -nographic
+
 	
