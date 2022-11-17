@@ -28,6 +28,9 @@ directories:
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
+	
+$(BUILD_DIR)/root.elf: root.o 
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@

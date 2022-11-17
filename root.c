@@ -41,35 +41,12 @@ notified(sel4cp_channel channel)
     elf_size++;
     
     if (elf_size >= HELLO_WORLD_ELF_SIZE) {
-        uart_put_str("root: finished reading file!\n");
-        
+        uart_put_str("root: finished reading file!\n");     
         uart_put_str("root: loading ELF segments for child\n");
         
         load_elf(elf_buffer_vaddr, loaded_elf_vaddr, 0x200000);
-        /*
-        elf_current_vaddr = elf_buffer_vaddr + 0x10000;
-        
-        for (uint64_t i = 0; i < 0x364; i++) {
-            *loaded_elf_vaddr = *elf_current_vaddr;
-            loaded_elf_vaddr++;
-            elf_current_vaddr++;
-        }
-        uart_put_str("root: loaded segment 1; loading segment 2\n");
-        
-        elf_current_vaddr = elf_buffer_vaddr + 0x11000;
-        for (uint64_t i = 0; i < 0x8; i++) {
-            *loaded_elf_vaddr = *elf_current_vaddr;
-            loaded_elf_vaddr++;
-            elf_current_vaddr++;
-        }
-        uart_put_str("root: loaded first part of segment 2; missing zeros\n");
-        for (uint64_t i = 0; i < (0x1020 - 0x8); i++) {
-            *loaded_elf_vaddr = 0;
-            loaded_elf_vaddr++;
-        }
-        */
+   
         uart_put_str("root: loaded all ELF segments; starting program!\n");
-        
         
         sel4cp_pd_restart(CHILD_PD_ID, CHILD_PD_ENTRY_POINT);
     }
