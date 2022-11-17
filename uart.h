@@ -46,3 +46,22 @@ void uart_put_str(char *str) {
 void uart_handle_irq() {
     *REG_PTR(uart_base_vaddr, UARTICR) = 0x7f0;
 }
+
+static char hexchar(unsigned int v) {
+    return v < 10 ? '0' + v : ('a' - 10) + v;
+}
+
+void uart_put_hex64(uint64_t val) {
+    char buffer[16 + 3];
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[16 + 3 - 1] = 0;
+    for (unsigned i = 16 + 1; i > 1; i--) {
+        buffer[i] = hexchar(val & 0xf);
+        val >>= 4;
+    }
+    uart_put_str(buffer);
+}
+
+
+
