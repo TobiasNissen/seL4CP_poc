@@ -2,6 +2,7 @@
 #include <sel4cp.h>
 
 #include "uart.h"
+#include "elf_loader.h"
 
 #define UART_IRQ_CHANNEL_ID 0
 
@@ -41,8 +42,11 @@ notified(sel4cp_channel channel)
     
     if (elf_size >= HELLO_WORLD_ELF_SIZE) {
         uart_put_str("root: finished reading file!\n");
+        
         uart_put_str("root: loading ELF segments for child\n");
         
+        load_elf(elf_buffer_vaddr, loaded_elf_vaddr, 0x200000);
+        /*
         elf_current_vaddr = elf_buffer_vaddr + 0x10000;
         
         for (uint64_t i = 0; i < 0x364; i++) {
@@ -63,6 +67,7 @@ notified(sel4cp_channel channel)
             *loaded_elf_vaddr = 0;
             loaded_elf_vaddr++;
         }
+        */
         uart_put_str("root: loaded all ELF segments; starting program!\n");
         
         

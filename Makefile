@@ -18,7 +18,7 @@ LIBS := -lsel4cp -Tsel4cp.ld
 IMAGE_FILE = $(BUILD_DIR)/loader.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
-IMAGES = hello_world.elf root.elf crasher.elf
+IMAGES = hello_world.elf root.elf
 
 
 all: directories $(IMAGE_FILE)
