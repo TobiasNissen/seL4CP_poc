@@ -29,7 +29,7 @@ directories:
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
 	
-$(BUILD_DIR)/root.elf: root.o 
+$(BUILD_DIR)/root.elf: root.o elf_loader.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o

@@ -1,26 +1,132 @@
 #include "elf_loader.h"
 
-void load_elf(uint8_t *src, uint8_t *dst, uint64_t dst_vaddr_offset) {
+#define EI_NIDENT 16 // the total number of bytes in the e_ident field of an ELF header.
+#define EI_CAPABILITY_OFFSET_IDX 9 // the index into `e_ident` in the ELF header where the offset of the capability section is written.
+#define EI_CAPABILITY_OFFSET_LEN 7 // the number of bytes used for writing the offset of the capability section.
+
+#define PT_LOAD 1 // the identifier for a loadable ELF segment.
+
+#define PRIORITY_ID 0
+#define BUDGET_ID 1
+#define PERIOD_ID 2
+
+#define PRIORITY_NUM_METADATA_BYTES 1
+#define BUDGET_NUM_METADATA_BYTES 8
+#define PERIOD_NUM_METADATA_BYTES 8
+
+// TODO: Move these utilities into a separate file
+static char hexchar(unsigned int v) {
+    return v < 10 ? '0' + v : ('a' - 10) + v;
+}
+
+void put_hex64(uint64_t val) {
+    char buffer[16 + 3];
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[16 + 3 - 1] = 0;
+    for (unsigned i = 16 + 1; i > 1; i--) {
+        buffer[i] = hexchar(val & 0xf);
+        val >>= 4;
+    }
+    sel4cp_dbg_puts(buffer);
+}
+
+typedef struct {
+    uint8_t e_ident[EI_NIDENT];
+    uint16_t e_type;
+    uint16_t e_machine;
+    uint32_t e_version;
+    uint64_t e_entry;
+    uint64_t e_phoff;
+    uint64_t e_shoff;
+    uint32_t e_flags;
+    uint16_t e_ehsize;
+    uint16_t e_phentsize;
+    uint16_t e_phnum;
+    uint16_t e_shentsize;
+    uint16_t e_shnum;
+    uint16_t e_shstrndx;
+} elf_header;
+
+typedef struct {
+    uint32_t p_type;
+    uint32_t p_flags;
+    uint64_t p_offset;
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    uint64_t p_filesz;
+    uint64_t p_memsz;
+    uint64_t p_align;
+} elf_program_header;
+
+
+void elf_loader_load_segments(uint8_t *src, uint8_t *dst, uint64_t dst_vaddr_offset) {
     elf_header *elf_hdr = (elf_header *)src;
     
     for (uint64_t i = 0; i < elf_hdr->e_phnum; i++) {
-        elf_program_header *p_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
-        if (p_hdr->p_type != PT_LOAD)
+        elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
+        if (prog_hdr->p_type != PT_LOAD)
             continue; // the segment should not be loaded.
             
-        uint8_t *src_read = src + p_hdr->p_offset;
+        uint8_t *src_read = src + prog_hdr->p_offset;
         // TODO: ensure that p_vaddr is not smaller than dst_vaddr_offset.
-        uint8_t *dst_write = dst + (p_hdr->p_vaddr - dst_vaddr_offset);
+        uint8_t *dst_write = dst + (prog_hdr->p_vaddr - dst_vaddr_offset);
         // Copy the segment bytes from the ELF file.
-        for (uint64_t j = 0; j < p_hdr->p_filesz; j++) {
+        for (uint64_t j = 0; j < prog_hdr->p_filesz; j++) {
             *dst_write++ = *src_read++;
         }
         // Write the required 0-initialized bytes, if needed.
-        if (p_hdr->p_memsz > p_hdr->p_filesz) {
-            uint64_t num_zero_bytes = p_hdr->p_memsz - p_hdr->p_filesz;
+        if (prog_hdr->p_memsz > prog_hdr->p_filesz) {
+            uint64_t num_zero_bytes = prog_hdr->p_memsz - prog_hdr->p_filesz;
             for (uint64_t j = 0; j < num_zero_bytes; j++) {
                 *dst_write++ = 0;
             }
         }
     }
 }
+
+int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, sel4cp_pd pd) {
+    sel4cp_dbg_puts("elf_loader: setting up capabilities!\n");
+
+    elf_header *elf_hdr = (elf_header *)elf_file;
+    
+    // Get the offset of the capability section, 
+    // taking into account that the offset is only 7 bytes long.
+    uint64_t capability_offset = *((uint64_t *)(elf_file + EI_CAPABILITY_OFFSET_IDX - 1)) >> 8;
+    
+    uint8_t *cap_reader = elf_file + capability_offset;
+    
+    uint64_t num_capabilities = *((uint64_t *) cap_reader);
+    cap_reader += 8;
+    
+    // Setup all capabilities.
+    for (uint64_t i = 0; i < num_capabilities; i++) {
+        uint8_t cap_type_id = *cap_reader++;
+        // TODO: Handle more capability types.
+        switch (cap_type_id) {
+            case PRIORITY_ID:
+                uint8_t priority = *cap_reader++;
+                sel4cp_pd_set_priority(pd, priority);
+                sel4cp_dbg_puts("elf_loader: set priority ");
+                put_hex64(priority);
+                sel4cp_dbg_puts("\n");
+                break;
+            case BUDGET_ID:
+                cap_reader += 8;
+                break;
+            case PERIOD_ID:
+                cap_reader += 8;
+                break;
+            default:
+                sel4cp_dbg_puts("elf_loader: invalid capability type id: ");
+                put_hex64(cap_type_id);
+                sel4cp_dbg_puts("\n");
+                return -1;
+        }
+    }
+    
+    return 0;
+}
+
+
+

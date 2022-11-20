@@ -9,7 +9,7 @@
 #define CHILD_PD_ID 1
 #define CHILD_PD_ENTRY_POINT 0x200000
 
-#define HELLO_WORLD_ELF_SIZE 136408
+#define HELLO_WORLD_ELF_SIZE 136436
 
 uint8_t *elf_buffer_vaddr;
 uint8_t *elf_current_vaddr;
@@ -44,11 +44,17 @@ notified(sel4cp_channel channel)
         uart_put_str("root: finished reading file!\n");     
         uart_put_str("root: loading ELF segments for child\n");
         
-        load_elf(elf_buffer_vaddr, loaded_elf_vaddr, 0x200000);
+        elf_loader_load_segments(elf_buffer_vaddr, loaded_elf_vaddr, CHILD_PD_ENTRY_POINT);
    
-        uart_put_str("root: loaded all ELF segments; starting program!\n");
+        uart_put_str("root: loaded all ELF segments; setting up capabilities!\n");
+        
+        elf_loader_setup_capabilities(elf_buffer_vaddr, HELLO_WORLD_ELF_SIZE, CHILD_PD_ID);
+        
+        uart_put_str("root: finished setting up capabilities; executing program!\n");
         
         sel4cp_pd_restart(CHILD_PD_ID, CHILD_PD_ENTRY_POINT);
+        
+        uart_put_str("root: restarted PD!\n");
     }
     
     sel4cp_irq_ack(channel);

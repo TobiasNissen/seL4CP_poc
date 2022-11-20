@@ -99,6 +99,18 @@ sel4cp_pd_stop(sel4cp_pd pd)
     }
 }
 
+static inline void
+sel4cp_pd_set_priority(sel4cp_pd pd, uint8_t priority)
+{
+    seL4_Error err;
+    // TODO: Set the authority to the calling thread's TCB.
+    err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, BASE_TCB_CAP + pd, priority);
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_pd_set_priority: error setting priority\n");
+        sel4cp_internal_crash(err);
+    }
+}
+
 static inline sel4cp_msginfo
 sel4cp_ppcall(sel4cp_channel ch, sel4cp_msginfo msginfo)
 {
