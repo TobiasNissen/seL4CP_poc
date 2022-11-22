@@ -14,6 +14,9 @@
 #define BUDGET_NUM_METADATA_BYTES 8
 #define PERIOD_NUM_METADATA_BYTES 8
 
+#define DEFAULT_BUDGET 1000
+#define DEFAULT_PERIOD DEFAULT_BUDGET
+
 // TODO: Move these utilities into a separate file
 static char hexchar(unsigned int v) {
     return v < 10 ? '0' + v : ('a' - 10) + v;
@@ -97,6 +100,10 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
     uint64_t num_capabilities = *((uint64_t *) cap_reader);
     cap_reader += 8;
     
+    uint64_t budget = DEFAULT_BUDGET;
+    uint64_t period = DEFAULT_PERIOD;
+    bool period_set_explicitly = false;
+    
     // Setup all capabilities.
     for (uint64_t i = 0; i < num_capabilities; i++) {
         uint8_t cap_type_id = *cap_reader++;
@@ -110,9 +117,12 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 sel4cp_dbg_puts("\n");
                 break;
             case BUDGET_ID:
+                budget = *((uint64_t *)cap_reader);
                 cap_reader += 8;
                 break;
             case PERIOD_ID:
+                period = *((uint64_t *)cap_reader);
+                period_set_explicitly = true;
                 cap_reader += 8;
                 break;
             default:
@@ -121,6 +131,18 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 sel4cp_dbg_puts("\n");
                 return -1;
         }
+    }
+    
+    // Set the scheduling flags if they have been explicitly provided.
+    if (budget != DEFAULT_BUDGET || period != DEFAULT_PERIOD) {
+        if (!period_set_explicitly)
+            period = budget; // By default, the period is the same as the budget.
+        sel4cp_dbg_puts("elf_loader: set scheduling flags: budget = ");
+        put_hex64(budget);
+        sel4cp_dbg_puts(" , period = ");
+        put_hex64(period);
+        sel4cp_dbg_puts("\n");
+        sel4cp_pd_set_sched_flags(pd, budget, period);
     }
     
     return 0;

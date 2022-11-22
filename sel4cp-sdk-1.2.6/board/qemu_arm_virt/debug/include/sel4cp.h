@@ -16,12 +16,15 @@
 typedef unsigned int sel4cp_channel;
 typedef unsigned int sel4cp_pd;
 typedef seL4_MessageInfo_t sel4cp_msginfo;
+typedef seL4_Time sel4cp_time;
 
 #define TCB_CAP_IDX 5
+#define SCHED_CONTROL_CAP_IDX 6
 #define BASE_OUTPUT_NOTIFICATION_CAP 10
 #define BASE_ENDPOINT_CAP 74
 #define BASE_IRQ_CAP 138
 #define BASE_TCB_CAP 202
+#define BASE_SCHED_CONTEXT_CAP 458
 
 #define SEL4CP_MAX_CHANNELS 63
 
@@ -107,6 +110,18 @@ sel4cp_pd_set_priority(sel4cp_pd pd, uint8_t priority)
     err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, TCB_CAP_IDX, priority);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_pd_set_priority: error setting priority\n");
+        sel4cp_internal_crash(err);
+    }
+}
+
+static inline void
+sel4cp_pd_set_sched_flags(sel4cp_pd pd, sel4cp_time budget, sel4cp_time period)
+{
+    seL4_Error err;
+    err = seL4_SchedControl_ConfigureFlags(SCHED_CONTROL_CAP_IDX, BASE_SCHED_CONTEXT_CAP + pd,
+                                           budget, period, 0, 0x100 + 2, 0); // TODO: Set 0x100 + 2 properly.
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_pd_set_sched_flags: error setting scheduling flags\n");
         sel4cp_internal_crash(err);
     }
 }
