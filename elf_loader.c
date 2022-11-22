@@ -87,8 +87,6 @@ void elf_loader_load_segments(uint8_t *src, uint8_t *dst, uint64_t dst_vaddr_off
 
 int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, sel4cp_pd pd) {
     sel4cp_dbg_puts("elf_loader: setting up capabilities!\n");
-
-    elf_header *elf_hdr = (elf_header *)elf_file;
     
     // Get the offset of the capability section, 
     // taking into account that the offset is only 7 bytes long.

@@ -11,7 +11,7 @@
         <map mr="loaded_elf" vaddr="0x4_000_000" perms="rw" setvar_vaddr="loaded_elf_vaddr" />
         <irq irq="33" id="0"/>
     	
-    	<protection_domain name="empty" priority="254" pd_id="1">
+    	<protection_domain name="empty" priority="200" pd_id="1">
     	    <map mr="loaded_elf" vaddr="0x200_000" perms="rwx" /> 
         </protection_domain>
     </protection_domain>

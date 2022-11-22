@@ -11,7 +11,7 @@ AS := $(TOOLCHAIN)-as
 SEL4CP_TOOL := $(SEL4CP_SDK)/bin/sel4cp
 BOARD_DIR := $(SEL4CP_SDK)/board/$(BOARD)/$(SEL4CP_CONFIG)
 
-CFLAGS := -mcpu=$(CPU) -mstrict-align -nostdlib -ffreestanding -g3 -O3 -Wall -Wno-array-bounds -Wno-unused-variable -Wno-unused-function -Werror -I$(BOARD_DIR)/include -DBOARD_$(BOARD)
+CFLAGS := -mcpu=$(CPU) -mstrict-align -nostdlib -ffreestanding -g3 -O2 -Wall -Wno-array-bounds -Wno-unused-variable -Wno-unused-function -Werror -I$(BOARD_DIR)/include -DBOARD_$(BOARD)
 LDFLAGS := -L$(BOARD_DIR)/lib
 LIBS := -lsel4cp -Tsel4cp.ld
 
@@ -29,7 +29,7 @@ directories:
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
 	
-$(BUILD_DIR)/root.elf: root.o elf_loader.o
+$(BUILD_DIR)/root.elf: $(BUILD_DIR)/root.o $(BUILD_DIR)/elf_loader.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o

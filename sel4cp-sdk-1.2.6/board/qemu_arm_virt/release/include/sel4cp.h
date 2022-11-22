@@ -17,6 +17,7 @@ typedef unsigned int sel4cp_channel;
 typedef unsigned int sel4cp_pd;
 typedef seL4_MessageInfo_t sel4cp_msginfo;
 
+#define TCB_CAP_IDX 5
 #define BASE_OUTPUT_NOTIFICATION_CAP 10
 #define BASE_ENDPOINT_CAP 74
 #define BASE_IRQ_CAP 138
@@ -94,7 +95,7 @@ sel4cp_pd_stop(sel4cp_pd pd)
     seL4_Error err;
     err = seL4_TCB_Suspend(BASE_TCB_CAP + pd);
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_pd_restart: error writing registers\n");
+        sel4cp_dbg_puts("sel4cp_pd_stop: error writing registers\n");
         sel4cp_internal_crash(err);
     }
 }
@@ -103,8 +104,7 @@ static inline void
 sel4cp_pd_set_priority(sel4cp_pd pd, uint8_t priority)
 {
     seL4_Error err;
-    // TODO: Set the authority to the calling thread's TCB.
-    err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, BASE_TCB_CAP + pd, priority);
+    err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, TCB_CAP_IDX, priority);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_pd_set_priority: error setting priority\n");
         sel4cp_internal_crash(err);
