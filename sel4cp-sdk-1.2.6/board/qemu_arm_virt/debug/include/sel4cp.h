@@ -119,7 +119,7 @@ sel4cp_pd_set_sched_flags(sel4cp_pd pd, sel4cp_time budget, sel4cp_time period)
 {
     seL4_Error err;
     err = seL4_SchedControl_ConfigureFlags(SCHED_CONTROL_CAP_IDX, BASE_SCHED_CONTEXT_CAP + pd,
-                                           budget, period, 0, 0x100 + 2, 0); // TODO: Set 0x100 + 2 properly.
+                                           budget, period, 0, 0, 0);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_pd_set_sched_flags: error setting scheduling flags\n");
         sel4cp_internal_crash(err);
