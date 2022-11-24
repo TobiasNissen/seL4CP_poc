@@ -10,6 +10,7 @@
 #define BUDGET_ID 1
 #define PERIOD_ID 2
 #define CHANNEL_ID 3
+#define MEMORY_REGION_ID 4
 
 #define DEFAULT_BUDGET 1000
 #define DEFAULT_PERIOD DEFAULT_BUDGET
@@ -110,6 +111,8 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 uint8_t target_id = *cap_reader++;
                 uint8_t own_id = *cap_reader++;
                 
+                sel4cp_set_up_channel(pd, target_pd, own_id, target_id);
+                
                 sel4cp_dbg_puts("elf_loader: set up channel - pd_a = ");
                 sel4cp_dbg_puthex64(pd);
                 sel4cp_dbg_puts(", pd_b = ");
@@ -119,8 +122,26 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 sel4cp_dbg_puts(", channel_id_b = ");
                 sel4cp_dbg_puthex64(target_id);
                 sel4cp_dbg_puts("\n");
+                break;
+            case MEMORY_REGION_ID:
+                uint64_t id = *((uint64_t *) cap_reader);
+                cap_reader += 8;
+                uint64_t vaddr = *((uint64_t *) cap_reader);
+                cap_reader +=8;
+                uint8_t perms = *cap_reader++;
+                uint8_t cached = *cap_reader++;
                 
-                sel4cp_set_up_channel(pd, target_pd, own_id, target_id);
+                // TODO: Actually set up the memory region.
+                
+                sel4cp_dbg_puts("elf_loader: set up memory region - id = ");
+                sel4cp_dbg_puthex64(id);
+                sel4cp_dbg_puts(", vaddr = ");
+                sel4cp_dbg_puthex64(vaddr);
+                sel4cp_dbg_puts(", perms = ");
+                sel4cp_dbg_puthex64(perms);
+                sel4cp_dbg_puts(", cached = ");
+                sel4cp_dbg_puthex64(cached);
+                sel4cp_dbg_puts("\n");
                 break;
             default:
                 sel4cp_dbg_puts("elf_loader: invalid capability type id: ");
