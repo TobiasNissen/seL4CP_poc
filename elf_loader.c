@@ -9,30 +9,10 @@
 #define PRIORITY_ID 0
 #define BUDGET_ID 1
 #define PERIOD_ID 2
-
-#define PRIORITY_NUM_METADATA_BYTES 1
-#define BUDGET_NUM_METADATA_BYTES 8
-#define PERIOD_NUM_METADATA_BYTES 8
+#define CHANNEL_ID 3
 
 #define DEFAULT_BUDGET 1000
 #define DEFAULT_PERIOD DEFAULT_BUDGET
-
-// TODO: Move these utilities into a separate file
-static char hexchar(unsigned int v) {
-    return v < 10 ? '0' + v : ('a' - 10) + v;
-}
-
-void put_hex64(uint64_t val) {
-    char buffer[16 + 3];
-    buffer[0] = '0';
-    buffer[1] = 'x';
-    buffer[16 + 3 - 1] = 0;
-    for (unsigned i = 16 + 1; i > 1; i--) {
-        buffer[i] = hexchar(val & 0xf);
-        val >>= 4;
-    }
-    sel4cp_dbg_puts(buffer);
-}
 
 typedef struct {
     uint8_t e_ident[EI_NIDENT];
@@ -113,7 +93,7 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 uint8_t priority = *cap_reader++;
                 sel4cp_pd_set_priority(pd, priority);
                 sel4cp_dbg_puts("elf_loader: set priority ");
-                put_hex64(priority);
+                sel4cp_dbg_puthex64(priority);
                 sel4cp_dbg_puts("\n");
                 break;
             case BUDGET_ID:
@@ -125,9 +105,26 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 period_set_explicitly = true;
                 cap_reader += 8;
                 break;
+            case CHANNEL_ID:
+                uint8_t target_pd = *cap_reader++;
+                uint8_t target_id = *cap_reader++;
+                uint8_t own_id = *cap_reader++;
+                
+                sel4cp_dbg_puts("elf_loader: set up channel - pd_a = ");
+                sel4cp_dbg_puthex64(pd);
+                sel4cp_dbg_puts(", pd_b = ");
+                sel4cp_dbg_puthex64(target_pd);
+                sel4cp_dbg_puts(", channel_id_a = ");
+                sel4cp_dbg_puthex64(own_id);
+                sel4cp_dbg_puts(", channel_id_b = ");
+                sel4cp_dbg_puthex64(target_id);
+                sel4cp_dbg_puts("\n");
+                
+                sel4cp_set_up_channel(pd, target_pd, own_id, target_id);
+                break;
             default:
                 sel4cp_dbg_puts("elf_loader: invalid capability type id: ");
-                put_hex64(cap_type_id);
+                sel4cp_dbg_puthex64(cap_type_id);
                 sel4cp_dbg_puts("\n");
                 return -1;
         }
@@ -138,9 +135,9 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
         if (!period_set_explicitly)
             period = budget; // By default, the period is the same as the budget.
         sel4cp_dbg_puts("elf_loader: set scheduling flags: budget = ");
-        put_hex64(budget);
+        sel4cp_dbg_puthex64(budget);
         sel4cp_dbg_puts(" , period = ");
-        put_hex64(period);
+        sel4cp_dbg_puthex64(period);
         sel4cp_dbg_puts("\n");
         sel4cp_pd_set_sched_flags(pd, budget, period);
     }

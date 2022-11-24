@@ -9,7 +9,7 @@
 #define CHILD_PD_ID 1
 #define CHILD_PD_ENTRY_POINT 0x200000
 
-#define HELLO_WORLD_ELF_SIZE 136436
+#define HELLO_WORLD_ELF_SIZE 138752
 
 uint8_t *elf_buffer_vaddr;
 uint8_t *elf_current_vaddr;
@@ -22,15 +22,19 @@ init(void)
 {
     uart_init();
     elf_current_vaddr = elf_buffer_vaddr;
-    uart_put_str("root: initialized!\n");
+    sel4cp_dbg_puts("root: initialized!\n");
 }
 
 void
 notified(sel4cp_channel channel)
 {
     if (channel != UART_IRQ_CHANNEL_ID) {
-        uart_put_str("root: got notified by unknown channel!\n");
+        sel4cp_dbg_puts("root: got notified by unknown channel!\n");
         return;
+    }
+    
+    if (elf_size == 0) {
+        sel4cp_dbg_puts("root: starting to read ELF file!\n");
     }
     
     uart_handle_irq();
@@ -41,20 +45,20 @@ notified(sel4cp_channel channel)
     elf_size++;
     
     if (elf_size >= HELLO_WORLD_ELF_SIZE) {
-        uart_put_str("root: finished reading file!\n");     
-        uart_put_str("root: loading ELF segments for child\n");
+        sel4cp_dbg_puts("root: finished reading file!\n");     
+        sel4cp_dbg_puts("root: loading ELF segments for child\n");
         
         elf_loader_load_segments(elf_buffer_vaddr, loaded_elf_vaddr, CHILD_PD_ENTRY_POINT);
    
-        uart_put_str("root: loaded all ELF segments; setting up capabilities!\n");
+        sel4cp_dbg_puts("root: loaded all ELF segments; setting up capabilities!\n");
         
         elf_loader_setup_capabilities(elf_buffer_vaddr, HELLO_WORLD_ELF_SIZE, CHILD_PD_ID);
         
-        uart_put_str("root: finished setting up capabilities; executing program!\n");
+        sel4cp_dbg_puts("root: finished setting up capabilities; executing program!\n");
         
         sel4cp_pd_restart(CHILD_PD_ID, CHILD_PD_ENTRY_POINT);
         
-        uart_put_str("root: restarted PD!\n");
+        sel4cp_dbg_puts("root: restarted PD!\n");
     }
     
     sel4cp_irq_ack(channel);
@@ -63,7 +67,7 @@ notified(sel4cp_channel channel)
 seL4_MessageInfo_t
 protected(sel4cp_channel ch, sel4cp_msginfo msginfo)
 {
-    uart_put_str("root: received protected message\n");
+    sel4cp_dbg_puts("root: received protected message\n");
 
     return sel4cp_msginfo_new(0, 0);
 }
@@ -71,14 +75,14 @@ protected(sel4cp_channel ch, sel4cp_msginfo msginfo)
 void
 fault(sel4cp_pd pd, sel4cp_msginfo msginfo)
 {
-    uart_put_str("root: received fault message for pd: ");
-    uart_put_hex64(pd);
-    uart_put_str("\n");
-    uart_put_str("root: label = ");
-    uart_put_hex64(sel4cp_msginfo_get_label(msginfo));
-    uart_put_str("\n");
-    uart_put_str("root: fault_addr = ");
-    uart_put_hex64(seL4_GetMR(seL4_CapFault_Addr));
-    uart_put_str("\n");
+    sel4cp_dbg_puts("root: received fault message for pd: ");
+    sel4cp_dbg_puthex64(pd);
+    sel4cp_dbg_puts("\n");
+    sel4cp_dbg_puts("root: label = ");
+    sel4cp_dbg_puthex64(sel4cp_msginfo_get_label(msginfo));
+    sel4cp_dbg_puts("\n");
+    sel4cp_dbg_puts("root: fault_addr = ");
+    sel4cp_dbg_puthex64(seL4_GetMR(seL4_CapFault_Addr));
+    sel4cp_dbg_puts("\n");
 }
 

@@ -25,6 +25,10 @@ typedef seL4_Time sel4cp_time;
 #define BASE_IRQ_CAP 138
 #define BASE_TCB_CAP 202
 #define BASE_SCHED_CONTEXT_CAP 266
+#define BASE_UNBADGED_CHANNEL_CAP 330
+#define BASE_CNODE_CAP 394
+
+#define PD_CAP_BITS 10
 
 #define SEL4CP_MAX_CHANNELS 63
 
@@ -45,6 +49,27 @@ void sel4cp_dbg_putc(int c);
  * Output a NUL terminated string to the debug console.
  */
 void sel4cp_dbg_puts(const char *s);
+
+
+static char hexchar(unsigned int v) {
+    return v < 10 ? '0' + v : ('a' - 10) + v;
+}
+
+/*
+ * Output the given integer as a 64 bit hexadecimal number.
+ */
+static inline void
+sel4cp_dbg_puthex64(uint64_t val) {
+    char buffer[16 + 3];
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[16 + 3 - 1] = 0;
+    for (unsigned i = 16 + 1; i > 1; i--) {
+        buffer[i] = hexchar(val & 0xf);
+        val >>= 4;
+    }
+    sel4cp_dbg_puts(buffer);
+}
 
 static inline void
 sel4cp_internal_crash(seL4_Error err)
@@ -122,6 +147,43 @@ sel4cp_pd_set_sched_flags(sel4cp_pd pd, sel4cp_time budget, sel4cp_time period)
                                            budget, period, 0, 0, 0);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_pd_set_sched_flags: error setting scheduling flags\n");
+        sel4cp_internal_crash(err);
+    }
+}
+
+static inline void
+sel4cp_set_up_channel(sel4cp_pd pd_a, sel4cp_pd pd_b, uint8_t channel_id_a, uint8_t channel_id_b) {
+    seL4_Error err;
+    
+    // Mint a notification capability to PD a, allowing it to notify PD b.
+    err = seL4_CNode_Mint(
+        BASE_CNODE_CAP + pd_a, 
+        BASE_OUTPUT_NOTIFICATION_CAP + channel_id_a,
+        PD_CAP_BITS,
+        BASE_CNODE_CAP + pd_b,
+        BASE_UNBADGED_CHANNEL_CAP + pd_b,
+        PD_CAP_BITS,
+        seL4_AllRights,
+        1 << channel_id_b
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_set_up_channel: failed set up channel capability for PD a\n");
+        sel4cp_internal_crash(err);
+    }
+    
+    // Mint a notification capability to PD b, allowing it to notify PD a.
+    err = seL4_CNode_Mint(
+        BASE_CNODE_CAP + pd_b, 
+        BASE_OUTPUT_NOTIFICATION_CAP + channel_id_b,
+        PD_CAP_BITS,
+        BASE_CNODE_CAP + pd_a,
+        BASE_UNBADGED_CHANNEL_CAP + pd_a,
+        PD_CAP_BITS,
+        seL4_AllRights,
+        1 << channel_id_a
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_set_up_channel: failed set up channel capability for PD b\n");
         sel4cp_internal_crash(err);
     }
 }

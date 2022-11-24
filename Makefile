@@ -18,7 +18,7 @@ LIBS := -lsel4cp -Tsel4cp.ld
 IMAGE_FILE = $(BUILD_DIR)/loader.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
-IMAGES = hello_world.elf root.elf
+IMAGES = hello_world.elf root.elf ping.elf
 
 
 all: directories $(IMAGE_FILE)
@@ -41,4 +41,6 @@ $(IMAGE_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) configuration.system
 run: $(IMAGE_FILE)
 	qemu-system-aarch64 -machine virt -cpu $(CPU) -serial pty -device loader,file=$(IMAGE_FILE),addr=0x70000000,cpu-num=0 -m size=1G -nographic
 
+clean:
+	rm -rf $(BUILD_DIR)
 	

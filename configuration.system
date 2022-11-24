@@ -4,15 +4,23 @@
     <memory_region name="elf_buffer" size="0x30_000" page_size="0x1_000" />
     <memory_region name="loaded_elf" size="0x3_000" page_size="0x1_000" />
     
-    <protection_domain name="root_domain" priority="253">
+    <protection_domain pd_id="0" name="root_domain" priority="253">
     	<program_image path="root.elf" />
+    	
+    	<!-- UART-related configuration -->
         <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false" setvar_vaddr="uart_base_vaddr"/>
+        <irq irq="33" id="0"/>
+        
+        <!-- Configuration related to dynamically loading an ELF file -->
         <map mr="elf_buffer" vaddr="0x3_000_000" perms="rw" setvar_vaddr="elf_buffer_vaddr" />
         <map mr="loaded_elf" vaddr="0x4_000_000" perms="rw" setvar_vaddr="loaded_elf_vaddr" />
-        <irq irq="33" id="0"/>
     	
-    	<protection_domain name="empty" priority="200" pd_id="1">
+    	<protection_domain pd_id="1" name="empty" priority="200">
     	    <map mr="loaded_elf" vaddr="0x200_000" perms="rwx" /> 
+        </protection_domain>
+        
+        <protection_domain pd_id="2" name="ping" priority="254">
+            <program_image path="ping.elf" />
         </protection_domain>
     </protection_domain>
 </system>
