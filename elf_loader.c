@@ -145,6 +145,7 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
         sel4cp_pd_set_sched_flags(pd, budget, period);
     }
     
+    
     return 0;
 }
 

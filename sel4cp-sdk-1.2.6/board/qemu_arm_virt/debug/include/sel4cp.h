@@ -24,7 +24,7 @@ typedef seL4_Time sel4cp_time;
 #define BASE_ENDPOINT_CAP 74
 #define BASE_IRQ_CAP 138
 #define BASE_TCB_CAP 202
-#define BASE_SCHED_CONTEXT_CAP 458
+#define BASE_SCHED_CONTEXT_CAP 266
 
 #define SEL4CP_MAX_CHANNELS 63
 

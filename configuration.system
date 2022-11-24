@@ -4,7 +4,7 @@
     <memory_region name="elf_buffer" size="0x30_000" page_size="0x1_000" />
     <memory_region name="loaded_elf" size="0x3_000" page_size="0x1_000" />
     
-    <protection_domain name="root" priority="253">
+    <protection_domain name="root_domain" priority="253">
     	<program_image path="root.elf" />
         <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false" setvar_vaddr="uart_base_vaddr"/>
         <map mr="elf_buffer" vaddr="0x3_000_000" perms="rw" setvar_vaddr="elf_buffer_vaddr" />
