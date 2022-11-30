@@ -3,7 +3,7 @@
 
 #define PING_CHANNEL_ID 1
 
-#define VADDR 0x209000
+#define VADDR 0x5000000
 
 void
 init(void)

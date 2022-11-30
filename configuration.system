@@ -4,7 +4,7 @@
     <memory_region name="elf_buffer" size="0x30_000" page_size="0x1_000" />
     <memory_region name="loaded_elf" size="0x3_000" page_size="0x1_000" />
     
-    <memory_region name="test_region" size="0x1_000" page_size="0x1_000" />
+    <memory_region name="test_region" size="0x3_000" page_size="0x1_000" />
     
     <protection_domain pd_id="0" name="root_domain" priority="253">
     	<program_image path="root.elf" />

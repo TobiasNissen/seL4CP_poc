@@ -25,6 +25,24 @@
 #define BASE_PAGING_STRUCTURE_POOL 522
 #define BASE_SHARED_MEMORY_REGION_PAGES (BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + POOL_NUM_PAGES)
 
+#define SEL4_ARM_DEFAULT_VMATTRIBUTES 3
+
+typedef struct {
+    uint64_t page_upper_directory_idx;
+    uint64_t page_directory_idx;
+    uint64_t page_table_idx;
+    uint64_t page_idx;
+} allocation_state;
+
+allocation_state new_allocation_state() {
+    allocation_state state;
+    state.page_upper_directory_idx = 0;
+    state.page_directory_idx = 0;
+    state.page_table_idx = 0;
+    state.page_idx = 0;
+    return state;
+}
+
 typedef struct {
     uint8_t e_ident[EI_NIDENT];
     uint16_t e_type;
@@ -79,6 +97,95 @@ void elf_loader_load_segments(uint8_t *src, uint8_t *dst, uint64_t dst_vaddr_off
     }
 }
 
+/**
+ *  Masks out the lower num_bits bits of n.
+ *  I.e. the lower num_bits bits of n are set to 0.
+ */
+static uint64_t mask_bits(uint64_t n, uint8_t num_bits) {
+    return (n >> num_bits) << num_bits;
+} 
+
+/**
+ *  ARM AArch64 processors have a four-level page-table structure.
+ *  The first 12 bits in a virtual address gives the offset into a page.
+ *  The next 9 bits in a virtual address are used to select a page in a page table.
+ *  The next 9 bits in a virtual address are used to select a page table in a page directory.
+ *  The next 9 bits in a virtual address are used to select a page directory in a page upper directory.
+ *  The next 9 bits in a virtual address are used to select a page upper directory in a page global directory.
+ *  Note that the VSpace is a page global directory in seL4 for ARM AArch64.
+ */
+static int set_up_required_paging_structures(allocation_state *allocation_state, uint64_t vaddr, sel4cp_pd pd) {
+    uint64_t pd_vspace_cap = BASE_VSPACE_CAP + pd;
+    
+    // Ensure that the required page upper directory is mapped.
+    uint64_t page_upper_directory_vaddr = mask_bits(vaddr, 12 + 9 + 9 + 9);
+    if (allocation_state->page_upper_directory_idx >= POOL_NUM_PAGE_UPPER_DIRECTORIES) {
+        sel4cp_dbg_puts("No page upper directories are available; allocate more and try again\n");
+        return -1;
+    }
+    seL4_Error err = seL4_ARM_PageUpperDirectory_Map(
+        BASE_PAGING_STRUCTURE_POOL + allocation_state->page_upper_directory_idx,
+        pd_vspace_cap,
+        page_upper_directory_vaddr,
+        SEL4_ARM_DEFAULT_VMATTRIBUTES 
+    );
+    if (err == seL4_NoError) {
+        allocation_state->page_upper_directory_idx++;
+    }
+    else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page upper directory has already been mapped.
+        sel4cp_dbg_puts("Failed to allocate a required page upper directory; error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
+        return -1;
+    }
+    
+    // Ensure that the required page directory is mapped.
+    uint64_t page_directory_vaddr = mask_bits(vaddr, 12 + 9 + 9);
+    if (allocation_state->page_directory_idx >= POOL_NUM_PAGE_DIRECTORIES) {
+        sel4cp_dbg_puts("No page directories are available; allocate more and try again\n");
+        return -1;
+    }
+    err = seL4_ARM_PageDirectory_Map(
+        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + allocation_state->page_directory_idx,
+        pd_vspace_cap,
+        page_directory_vaddr,
+        SEL4_ARM_DEFAULT_VMATTRIBUTES 
+    );
+    if (err == seL4_NoError) {
+        allocation_state->page_directory_idx++;
+    }
+    else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page directory has already been mapped.
+        sel4cp_dbg_puts("Failed to allocate a required page directory; error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
+        return -1;
+    }
+    
+    // Ensure that the required page table is mapped.
+    uint64_t page_table_vaddr = mask_bits(vaddr, 12 + 9);
+    if (allocation_state->page_table_idx >= POOL_NUM_PAGE_TABLES) {
+        sel4cp_dbg_puts("No page tables are available; allocate more and try again\n");
+        return -1;
+    }
+    err = seL4_ARM_PageTable_Map(
+        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + allocation_state->page_table_idx,
+        pd_vspace_cap,
+        page_table_vaddr,
+        SEL4_ARM_DEFAULT_VMATTRIBUTES 
+    );
+    if (err == seL4_NoError) {
+        allocation_state->page_table_idx++;
+    }
+    else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page table has already been mapped.
+        sel4cp_dbg_puts("Failed to allocate a required page table; error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
+        return -1;
+    }
+    
+    return 0;
+}
+
 int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, sel4cp_pd pd) {
     sel4cp_dbg_puts("elf_loader: setting up capabilities!\n");
     
@@ -94,6 +201,10 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
     uint64_t budget = DEFAULT_BUDGET;
     uint64_t period = DEFAULT_PERIOD;
     bool period_set_explicitly = false;
+    
+    // For now, it is assumed that all paging structures in the statically allocated pool are available.
+    // This assumption most likely does not hold if multiple programs need to be loaded from the same PD.
+    allocation_state allocation_state = new_allocation_state(); 
     
     // Setup all capabilities.
     for (uint64_t i = 0; i < num_capabilities; i++) {
@@ -163,11 +274,19 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 }
                 
                 // Map the page into the child PD's VSpace.
-                uint64_t pd_vspace_cap = 458 + pd;
+                uint64_t pd_vspace_cap = BASE_VSPACE_CAP + pd;
                 uint64_t num_pages = size / 0x1000; // Assumes that the size is a multiple of the page size 0x1000.
                 for (uint64_t j = 0; j < num_pages; j++) {
                     uint64_t page_cap = BASE_SHARED_MEMORY_REGION_PAGES + id + j;
-                    seL4_Error err = seL4_ARM_Page_Map(page_cap, pd_vspace_cap, vaddr, rights, vm_attributes);
+                    uint64_t page_vaddr = vaddr + (j * 0x1000);
+                    
+                    // Ensure that all required higher-level paging structures are mapped before
+                    // mapping this page.
+                    if (set_up_required_paging_structures(&allocation_state, page_vaddr, pd)) {
+                        return -1;
+                    }
+                    
+                    seL4_Error err = seL4_ARM_Page_Map(page_cap, pd_vspace_cap, page_vaddr, rights, vm_attributes);
                     if (err != seL4_NoError) {
                         sel4cp_dbg_puts("elf_loader: failed to map page for child\n");
                         sel4cp_dbg_puthex64(err);
@@ -207,41 +326,6 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
         sel4cp_dbg_puts("\n");
         sel4cp_pd_set_sched_flags(pd, budget, period);
     }
-    
-    /*
-    // TODO: Delete this again; only for experimentation
-    uint64_t page_vaddr = 0x4007000;
-    uint64_t own_page_cap_idx = 550;
-    uint64_t own_vspace_cap_idx = 3;
-    uint64_t vm_attributes = 3;
-    seL4_Error err = seL4_ARM_Page_Map(own_page_cap_idx, own_vspace_cap_idx, page_vaddr, seL4_AllRights, vm_attributes);
-    if (err != seL4_NoError) {
-        sel4cp_dbg_puts("elf_loader: failed to map page\n");
-        return -1;
-    }
-    *((uint8_t *)page_vaddr) = 42; 
-    
-    uint64_t own_cspace_cap_idx = 394;
-    uint64_t child_page_cap_idx = 900;
-    uint64_t cap_depth = 10;
-    err = seL4_CNode_Mint(own_cspace_cap_idx, child_page_cap_idx, cap_depth, 
-                          own_cspace_cap_idx, own_page_cap_idx, cap_depth, 
-                          seL4_AllRights, 0);
-    if (err != seL4_NoError) {
-        sel4cp_dbg_puts("elf_loader: failed to mint page capability\n");
-        return -1;
-    }
-    
-    uint64_t child_vspace_cap_idx = 458 + pd;
-    uint64_t child_vaddr = 0x209000;
-    err = seL4_ARM_Page_Map(child_page_cap_idx, child_vspace_cap_idx, child_vaddr, seL4_AllRights, vm_attributes);
-    if (err != seL4_NoError) {
-        sel4cp_dbg_puts("elf_loader: failed to map page for child\n");
-        sel4cp_dbg_puthex64(err);
-        sel4cp_dbg_puts("\n");
-        return -1;
-    }
-    */
     
     return 0;
 }
