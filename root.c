@@ -9,7 +9,7 @@
 #define CHILD_PD_ID 1
 #define CHILD_PD_ENTRY_POINT 0x200000
 
-#define HELLO_WORLD_ELF_SIZE 138752
+#define HELLO_WORLD_ELF_SIZE 139347
 
 uint8_t *elf_buffer_vaddr;
 uint8_t *elf_current_vaddr;
@@ -17,12 +17,16 @@ uint64_t elf_size = 0;
 
 uint8_t *loaded_elf_vaddr;
 
+uint8_t *test_region_vaddr;
+
 void
 init(void)
 {
     uart_init();
     elf_current_vaddr = elf_buffer_vaddr;
     sel4cp_dbg_puts("root: initialized!\n");
+    sel4cp_dbg_puts("root: Writing 42 to shared memory region!\n");
+    *test_region_vaddr = 42;
 }
 
 void

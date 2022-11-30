@@ -15,6 +15,16 @@
 #define DEFAULT_BUDGET 1000
 #define DEFAULT_PERIOD DEFAULT_BUDGET
 
+// TODO: Ensure that these are defined based on the system configuration.
+#define POOL_NUM_PAGE_UPPER_DIRECTORIES 5
+#define POOL_NUM_PAGE_DIRECTORIES 5
+#define POOL_NUM_PAGE_TABLES 10
+#define POOL_NUM_PAGES 100
+
+#define BASE_VSPACE_CAP 458
+#define BASE_PAGING_STRUCTURE_POOL 522
+#define BASE_SHARED_MEMORY_REGION_PAGES (BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + POOL_NUM_PAGES)
+
 typedef struct {
     uint8_t e_ident[EI_NIDENT];
     uint16_t e_type;
@@ -88,7 +98,6 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
     // Setup all capabilities.
     for (uint64_t i = 0; i < num_capabilities; i++) {
         uint8_t cap_type_id = *cap_reader++;
-        // TODO: Handle more capability types.
         switch (cap_type_id) {
             case PRIORITY_ID:
                 uint8_t priority = *cap_reader++;
@@ -127,16 +136,52 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
                 uint64_t id = *((uint64_t *) cap_reader);
                 cap_reader += 8;
                 uint64_t vaddr = *((uint64_t *) cap_reader);
-                cap_reader +=8;
+                cap_reader += 8;
+                uint64_t size = *((uint64_t *) cap_reader);
+                cap_reader += 8;
                 uint8_t perms = *cap_reader++;
                 uint8_t cached = *cap_reader++;
                 
-                // TODO: Actually set up the memory region.
+                // Setup the capability rights.
+                seL4_CapRights_t rights = seL4_NoRights;
+                if (perms >= 3)
+                    rights = seL4_ReadWrite;
+                else if (perms == 2) {
+                    rights = seL4_CanWrite;
+                }
+                else if (perms == 0) {
+                    rights = seL4_CanRead;
+                }
+                
+                // Setup the VM attributes.
+                uint8_t vm_attributes = 2; // Ensures that parity is enabled.
+                if (cached == 1) {
+                    vm_attributes |= 1;
+                }
+                if (perms < 4) {
+                    vm_attributes |= 4;
+                }
+                
+                // Map the page into the child PD's VSpace.
+                uint64_t pd_vspace_cap = 458 + pd;
+                uint64_t num_pages = size / 0x1000; // Assumes that the size is a multiple of the page size 0x1000.
+                for (uint64_t j = 0; j < num_pages; j++) {
+                    uint64_t page_cap = BASE_SHARED_MEMORY_REGION_PAGES + id + j;
+                    seL4_Error err = seL4_ARM_Page_Map(page_cap, pd_vspace_cap, vaddr, rights, vm_attributes);
+                    if (err != seL4_NoError) {
+                        sel4cp_dbg_puts("elf_loader: failed to map page for child\n");
+                        sel4cp_dbg_puthex64(err);
+                        sel4cp_dbg_puts("\n");
+                        return -1;
+                    } 
+                }                
                 
                 sel4cp_dbg_puts("elf_loader: set up memory region - id = ");
                 sel4cp_dbg_puthex64(id);
                 sel4cp_dbg_puts(", vaddr = ");
                 sel4cp_dbg_puthex64(vaddr);
+                sel4cp_dbg_puts(", size = ");
+                sel4cp_dbg_puthex64(size);
                 sel4cp_dbg_puts(", perms = ");
                 sel4cp_dbg_puthex64(perms);
                 sel4cp_dbg_puts(", cached = ");
@@ -163,6 +208,40 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, uint64_t elf_file_length, s
         sel4cp_pd_set_sched_flags(pd, budget, period);
     }
     
+    /*
+    // TODO: Delete this again; only for experimentation
+    uint64_t page_vaddr = 0x4007000;
+    uint64_t own_page_cap_idx = 550;
+    uint64_t own_vspace_cap_idx = 3;
+    uint64_t vm_attributes = 3;
+    seL4_Error err = seL4_ARM_Page_Map(own_page_cap_idx, own_vspace_cap_idx, page_vaddr, seL4_AllRights, vm_attributes);
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("elf_loader: failed to map page\n");
+        return -1;
+    }
+    *((uint8_t *)page_vaddr) = 42; 
+    
+    uint64_t own_cspace_cap_idx = 394;
+    uint64_t child_page_cap_idx = 900;
+    uint64_t cap_depth = 10;
+    err = seL4_CNode_Mint(own_cspace_cap_idx, child_page_cap_idx, cap_depth, 
+                          own_cspace_cap_idx, own_page_cap_idx, cap_depth, 
+                          seL4_AllRights, 0);
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("elf_loader: failed to mint page capability\n");
+        return -1;
+    }
+    
+    uint64_t child_vspace_cap_idx = 458 + pd;
+    uint64_t child_vaddr = 0x209000;
+    err = seL4_ARM_Page_Map(child_page_cap_idx, child_vspace_cap_idx, child_vaddr, seL4_AllRights, vm_attributes);
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("elf_loader: failed to map page for child\n");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
+        return -1;
+    }
+    */
     
     return 0;
 }
