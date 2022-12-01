@@ -49,26 +49,14 @@ notified(sel4cp_channel channel)
     elf_size++;
     
     if (elf_size >= HELLO_WORLD_ELF_SIZE) {
-        sel4cp_dbg_puts("root: finished reading file!\n");     
-        sel4cp_dbg_puts("root: loading ELF segments for child\n");
+        sel4cp_dbg_puts("root: finished reading file!\n");   
         
-        if (elf_loader_load_segments(elf_buffer_vaddr, CHILD_PD_ID)) {
-            sel4cp_dbg_puts("root: failed to load all ELF segments!\n");
-            return;
-        }
-   
-        sel4cp_dbg_puts("root: loaded all ELF segments; setting up capabilities!\n");
-        
-        if (elf_loader_setup_capabilities(elf_buffer_vaddr, CHILD_PD_ID)) {
-            sel4cp_dbg_puts("root: failed to setup capabilities!\n");
+        if (elf_loader_run(elf_buffer_vaddr, CHILD_PD_ID)) {
+            sel4cp_dbg_puts("root: failed to run the program in the child PD!\n");
             return;
         }
         
-        sel4cp_dbg_puts("root: finished setting up capabilities; executing program!\n");
-        
-        sel4cp_pd_restart(CHILD_PD_ID, CHILD_PD_ENTRY_POINT);
-        
-        sel4cp_dbg_puts("root: restarted PD!\n");
+        sel4cp_dbg_puts("root: successfully started the program in the child PD\n");
     }
     
     sel4cp_irq_ack(channel);

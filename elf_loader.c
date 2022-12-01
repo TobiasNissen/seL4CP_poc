@@ -306,63 +306,10 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     return __loader_temp_page_vaddr + ((uint64_t)(vaddr % 0x1000));
 }
 
-/*
- *  Loads the ELF program at the given src into the given PD.
+/**
+ *  Sets up the capabilities for the given program in the given PD.
  */
-int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
-    elf_header *elf_hdr = (elf_header *)src;
-    
-    for (uint64_t i = 0; i < elf_hdr->e_phnum; i++) {
-        elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
-        if (prog_hdr->p_type != PT_LOAD)
-            continue; // the segment should not be loaded.
-        
-        uint8_t *dst_write = allocate_page(prog_hdr->p_vaddr, pd, prog_hdr->p_flags);
-        if (dst_write == NULL) {
-            sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
-            return -1;
-        }
-        
-        uint8_t *src_read = src + prog_hdr->p_offset;
-        uint64_t current_vaddr = prog_hdr->p_vaddr;
-        
-        // Copy the segment bytes from the ELF file.
-        for (uint64_t j = 0; j < prog_hdr->p_filesz; j++) {
-            *dst_write++ = *src_read++;
-            
-            current_vaddr++;
-            if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
-                // Allocate a new page.
-                dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
-                if (dst_write == NULL) {
-                    sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
-                    return -1;
-                }
-            }
-        }
-        // Write the required 0-initialized bytes, if needed.
-        if (prog_hdr->p_memsz > prog_hdr->p_filesz) {
-            uint64_t num_zero_bytes = prog_hdr->p_memsz - prog_hdr->p_filesz;
-            for (uint64_t j = 0; j < num_zero_bytes; j++) {
-                *dst_write++ = 0;
-                
-                current_vaddr++;
-                if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
-                    // Allocate a new page.
-                    dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
-                    if (dst_write == NULL) {
-                        sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
-                        return -1;
-                    }
-                }
-            }
-        }
-    }
-    return 0;
-}
-
-
-int elf_loader_setup_capabilities(uint8_t *elf_file, sel4cp_pd pd) {
+static int set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd) {
     sel4cp_dbg_puts("elf_loader: setting up capabilities!\n");
     
     // Get the offset of the capability section, 
@@ -491,6 +438,79 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, sel4cp_pd pd) {
     
     return 0;
 }
+
+
+int elf_loader_load(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point) {
+    elf_header *elf_hdr = (elf_header *)src;
+    
+    // Set the entry point of the given program.
+    *entry_point = elf_hdr->e_entry;
+    
+    for (uint64_t i = 0; i < elf_hdr->e_phnum; i++) {
+        elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
+        if (prog_hdr->p_type != PT_LOAD)
+            continue; // the segment should not be loaded.
+        
+        uint8_t *dst_write = allocate_page(prog_hdr->p_vaddr, pd, prog_hdr->p_flags);
+        if (dst_write == NULL) {
+            sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
+            return -1;
+        }
+        
+        uint8_t *src_read = src + prog_hdr->p_offset;
+        uint64_t current_vaddr = prog_hdr->p_vaddr;
+        
+        // Copy the segment bytes from the ELF file.
+        for (uint64_t j = 0; j < prog_hdr->p_filesz; j++) {
+            *dst_write++ = *src_read++;
+            
+            current_vaddr++;
+            if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
+                // Allocate a new page.
+                dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
+                if (dst_write == NULL) {
+                    sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
+                    return -1;
+                }
+            }
+        }
+        // Write the required 0-initialized bytes, if needed.
+        if (prog_hdr->p_memsz > prog_hdr->p_filesz) {
+            uint64_t num_zero_bytes = prog_hdr->p_memsz - prog_hdr->p_filesz;
+            for (uint64_t j = 0; j < num_zero_bytes; j++) {
+                *dst_write++ = 0;
+                
+                current_vaddr++;
+                if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
+                    // Allocate a new page.
+                    dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
+                    if (dst_write == NULL) {
+                        sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+    
+    return set_up_capabilities(src, pd);
+}
+
+int elf_loader_run(uint8_t *src, sel4cp_pd pd) {
+    uint64_t entry_point;
+    int result = elf_loader_load(src, pd, &entry_point);
+    if (result)
+        return result;
+    
+    sel4cp_pd_restart(pd, entry_point);
+    
+    return 0;
+}
+
+
+
+
+
 
 
 
