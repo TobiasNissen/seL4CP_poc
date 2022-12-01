@@ -60,7 +60,7 @@ init(void)
     sel4cp_dbg_puts("root: writing 42 (0x2a) to shared memory region!\n");
     *test_region_vaddr = 42;
     
-    sel4cp_dbg_puts("root: ready to receive ELF file to load dynamically; start by sending the size of the file as a NULL-terminated hexadecimal string\n");
+    sel4cp_dbg_puts("root: ready to receive ELF file to load dynamically; start by sending the size of the file as a hexadecimal string ended by newline\n");
 }
 
 void

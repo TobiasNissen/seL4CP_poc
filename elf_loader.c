@@ -26,9 +26,8 @@
 #define POOL_NUM_PAGE_TABLES 10
 #define POOL_NUM_PAGES 100
 
-#define VSPACE_CAP_IDX 3
-#define CNODE_CAP_IDX 7
 #define LOADER_TEMP_PAGE_CAP 8
+#define BASE_CNODE_CAP 394
 #define BASE_VSPACE_CAP 458
 #define BASE_PAGING_STRUCTURE_POOL 522
 #define BASE_SHARED_MEMORY_REGION_PAGES (BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + POOL_NUM_PAGES)
@@ -260,7 +259,7 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     
     // Ensure that the capability slot for the page capability mapped into the current PD's VSpace is empty.
     err = seL4_CNode_Delete(
-        CNODE_CAP_IDX,
+        BASE_CNODE_CAP + current_pd_id,
         LOADER_TEMP_PAGE_CAP,
         PD_CAP_BITS
     );
@@ -273,10 +272,10 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     
     // Copy the capability for the allocated page to the temporary page cap CSlot.
     err = seL4_CNode_Copy(
-        CNODE_CAP_IDX,
+        BASE_CNODE_CAP + current_pd_id,
         LOADER_TEMP_PAGE_CAP,
         PD_CAP_BITS,
-        CNODE_CAP_IDX,
+        BASE_CNODE_CAP + current_pd_id,
         BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + alloc_state.page_idx - 1,
         PD_CAP_BITS,
         seL4_AllRights
@@ -291,7 +290,7 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     // Map the copied page capability into the VSpace of the current PD.
     err = seL4_ARM_Page_Map(
         LOADER_TEMP_PAGE_CAP,
-        VSPACE_CAP_IDX,
+        BASE_VSPACE_CAP + current_pd_id,
         (uint64_t)__loader_temp_page_vaddr,
         seL4_ReadWrite,
         SEL4_ARM_DEFAULT_VMATTRIBUTES
