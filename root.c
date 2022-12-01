@@ -9,7 +9,7 @@
 #define CHILD_PD_ID 1
 #define CHILD_PD_ENTRY_POINT 0x200000
 
-#define HELLO_WORLD_ELF_SIZE 139347
+#define HELLO_WORLD_ELF_SIZE 139355
 
 uint8_t *elf_buffer_vaddr;
 uint8_t *elf_current_vaddr;

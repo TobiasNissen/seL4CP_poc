@@ -7,6 +7,10 @@
 
 #define PT_LOAD 1 // the identifier for a loadable ELF segment.
 
+#define P_FLAGS_EXECUTABLE 1
+#define P_FLAGS_WRITABLE 2
+#define P_FLAGS_READABLE 4
+
 #define PRIORITY_ID 0
 #define BUDGET_ID 1
 #define PERIOD_ID 2
@@ -97,7 +101,7 @@ static uint64_t mask_bits(uint64_t n, uint8_t num_bits) {
  *  All bits not mentioned above are ignored and, thus, not given any meaning.
  */
 static seL4_CapRights_t parse_cap_rights(uint8_t memory_flags) {
-    if (memory_flags & 2) {
+    if (memory_flags & P_FLAGS_WRITABLE) {
         return seL4_ReadWrite;
     }
     
@@ -114,7 +118,7 @@ static seL4_ARM_VMAttributes parse_vm_attributes(uint8_t memory_flags, bool cach
     if (cached) {
         result |= SEL4_ARM_PAGE_CACHEABLE;
     }
-    if (!(memory_flags & 1)) {
+    if (!(memory_flags & P_FLAGS_EXECUTABLE)) {
         result |= SEL4_ARM_EXECUTE_NEVER;
     }
     return result;
@@ -125,11 +129,12 @@ static seL4_ARM_VMAttributes parse_vm_attributes(uint8_t memory_flags, bool cach
  *  page-table structure required to map a page at the given virtual address in the given
  *  PD are mapped.
  *
- *  The first 12 bits in a virtual address gives the offset into a page.
- *  The next 9 bits in a virtual address are used to select a page in a page table.
- *  The next 9 bits in a virtual address are used to select a page table in a page directory.
- *  The next 9 bits in a virtual address are used to select a page directory in a page upper directory.
- *  The next 9 bits in a virtual address are used to select a page upper directory in a page global directory.
+ *  The bits in a virtual address are given the following meaning:
+ *      -  0-11: offset into a page.
+ *      - 12-20: offset into a page table, selecting a specific page.
+ *      - 21-29: offset into a page directory, selecting a specific page table.
+ *      - 30-38: offset into a page upper directory, selecting a specific page directory.
+ *      - 39-47: offset into a page global directory, selecting a specific page upper directory. 
  *  Note that the VSpace is a page global directory in seL4 for ARM AArch64.
  */
 static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
@@ -138,7 +143,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
     // Ensure that the required page upper directory is mapped.
     uint64_t page_upper_directory_vaddr = mask_bits(vaddr, 12 + 9 + 9 + 9);
     if (alloc_state.page_upper_directory_idx >= POOL_NUM_PAGE_UPPER_DIRECTORIES) {
-        sel4cp_dbg_puts("No page upper directories are available; allocate more and try again\n");
+        sel4cp_dbg_puts("elf_loader: no page upper directories are available; allocate more and try again\n");
         return -1;
     }
     seL4_Error err = seL4_ARM_PageUpperDirectory_Map(
@@ -151,7 +156,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
         alloc_state.page_upper_directory_idx++;
     }
     else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page upper directory has already been mapped.
-        sel4cp_dbg_puts("Failed to allocate a required page upper directory; error code = ");
+        sel4cp_dbg_puts("elf_loader: failed to allocate a required page upper directory; error code = ");
         sel4cp_dbg_puthex64(err);
         sel4cp_dbg_puts("\n");
         return -1;
@@ -160,7 +165,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
     // Ensure that the required page directory is mapped.
     uint64_t page_directory_vaddr = mask_bits(vaddr, 12 + 9 + 9);
     if (alloc_state.page_directory_idx >= POOL_NUM_PAGE_DIRECTORIES) {
-        sel4cp_dbg_puts("No page directories are available; allocate more and try again\n");
+        sel4cp_dbg_puts("elf_loader: no page directories are available; allocate more and try again\n");
         return -1;
     }
     err = seL4_ARM_PageDirectory_Map(
@@ -173,7 +178,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
         alloc_state.page_directory_idx++;
     }
     else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page directory has already been mapped.
-        sel4cp_dbg_puts("Failed to allocate a required page directory; error code = ");
+        sel4cp_dbg_puts("elf_loader: failed to allocate a required page directory; error code = ");
         sel4cp_dbg_puthex64(err);
         sel4cp_dbg_puts("\n");
         return -1;
@@ -182,7 +187,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
     // Ensure that the required page table is mapped.
     uint64_t page_table_vaddr = mask_bits(vaddr, 12 + 9);
     if (alloc_state.page_table_idx >= POOL_NUM_PAGE_TABLES) {
-        sel4cp_dbg_puts("No page tables are available; allocate more and try again\n");
+        sel4cp_dbg_puts("elf_loader: no page tables are available; allocate more and try again\n");
         return -1;
     }
     err = seL4_ARM_PageTable_Map(
@@ -195,7 +200,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
         alloc_state.page_table_idx++;
     }
     else if (err != seL4_DeleteFirst) { // if err == seL4_DeleteFirst, the required page table has already been mapped.
-        sel4cp_dbg_puts("Failed to allocate a required page table; error code = ");
+        sel4cp_dbg_puts("elf_loader: failed to allocate a required page table; error code = ");
         sel4cp_dbg_puthex64(err);
         sel4cp_dbg_puts("\n");
         return -1;
@@ -211,7 +216,8 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
  *  The required paging structures are automatically allocated,
  *  and the page is mapped with the given ELF program header p_flags.
  *
- *  Returns NULL if the allocation fails.
+ *  Returns NULL if the allocation fails. 
+ *  Nothing is done to clean up in this case.
  */
 static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     if (set_up_required_paging_structures(vaddr, pd)) {
@@ -226,7 +232,7 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     // Allocate and map the required page.
     uint64_t page_vaddr = mask_bits(vaddr, 12);
     if (alloc_state.page_idx >= POOL_NUM_PAGES) {
-        sel4cp_dbg_puts("No pages are available; allocate more and try again\n");
+        sel4cp_dbg_puts("elf_loader: no pages are available; allocate more and try again\n");
         return NULL;
     }
     seL4_Error err = seL4_ARM_Page_Map(
@@ -240,7 +246,7 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         alloc_state.page_idx++;
     }
     else {
-        sel4cp_dbg_puts("Failed to allocate a required page table; error code = ");
+        sel4cp_dbg_puts("elf_loader: failed to allocate a required page; error code = ");
         sel4cp_dbg_puthex64(err);
         sel4cp_dbg_puts("\n");
         return NULL;
@@ -259,7 +265,9 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         PD_CAP_BITS
     );
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("failed to clean up the CSlot containing the temporary page cap used for loading ELF files\n");
+        sel4cp_dbg_puts("elf_loader: failed to clean up the CSlot containing the temporary page cap used for loading ELF files, error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
         return NULL;
     }
     
@@ -274,7 +282,9 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         seL4_AllRights
     );
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("failed to copy page capability required to be able to load ELF file\n");
+        sel4cp_dbg_puts("elf_loader: failed to copy page capability required to be able to load ELF file, error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
         return NULL;
     }
     
@@ -287,7 +297,7 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         SEL4_ARM_DEFAULT_VMATTRIBUTES
     );
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("failed to map the page via the copied page capability into the current PD's VSpace, error code = ");
+        sel4cp_dbg_puts("elf_loader: failed to map the page via the copied page capability into the current PD's VSpace, error code = ");
         sel4cp_dbg_puthex64(err);
         sel4cp_dbg_puts("\n");
         return NULL;
@@ -309,7 +319,7 @@ int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
         
         uint8_t *dst_write = allocate_page(prog_hdr->p_vaddr, pd, prog_hdr->p_flags);
         if (dst_write == NULL) {
-            sel4cp_dbg_puts("failed to allocate a page required to load the ELF file\n");
+            sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
             return -1;
         }
         
@@ -325,7 +335,7 @@ int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
                 // Allocate a new page.
                 dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
                 if (dst_write == NULL) {
-                    sel4cp_dbg_puts("failed to allocate a page required to load the ELF file\n");
+                    sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
                     return -1;
                 }
             }
@@ -341,7 +351,7 @@ int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
                     // Allocate a new page.
                     dst_write = allocate_page(current_vaddr, pd, prog_hdr->p_flags);
                     if (dst_write == NULL) {
-                        sel4cp_dbg_puts("failed to allocate a page required to load the ELF file\n");
+                        sel4cp_dbg_puts("elf_loader: failed to allocate a page required to load the ELF file\n");
                         return -1;
                     }
                 }
