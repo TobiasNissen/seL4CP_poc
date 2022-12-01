@@ -31,6 +31,10 @@
 
 #define PD_CAP_BITS 11
 
+#define SEL4_ARM_PAGE_CACHEABLE 1
+#define SEL4_ARM_PARITY_ENABLED 2
+#define SEL4_ARM_EXECUTE_NEVER 4
+
 #define SEL4_ARM_DEFAULT_VMATTRIBUTES 3
 
 uint8_t *__loader_temp_page_vaddr; // set by the build tool.
@@ -83,7 +87,38 @@ typedef struct {
  */
 static uint64_t mask_bits(uint64_t n, uint8_t num_bits) {
     return (n >> num_bits) << num_bits;
-} 
+}
+
+/**
+ *  Parses the given memory_flags into an appropriate seL4_CapRights_t object.
+ *  The bits (0-7) in the memory_flags are given meaning in the following way:
+ *      1: write
+ *      2: read
+ *  All bits not mentioned above are ignored and, thus, not given any meaning.
+ */
+static seL4_CapRights_t parse_cap_rights(uint8_t memory_flags) {
+    if (memory_flags & 2) {
+        return seL4_ReadWrite;
+    }
+    
+    return seL4_CanRead;
+}
+
+/**
+ *  Parses the information in memory_flags and cached into an seL4_ARM_VMAttributes object.
+ *  If the first bit (index 0) in memory_flags is set, the VM attributes will indicate
+ *  that the targeted page should be executable.
+ */
+static seL4_ARM_VMAttributes parse_vm_attributes(uint8_t memory_flags, bool cached) {
+    seL4_ARM_VMAttributes result = SEL4_ARM_PARITY_ENABLED;
+    if (cached) {
+        result |= SEL4_ARM_PAGE_CACHEABLE;
+    }
+    if (!(memory_flags & 1)) {
+        result |= SEL4_ARM_EXECUTE_NEVER;
+    }
+    return result;
+}
 
 /**
  *  Ensures that all higher-level paging structures in the ARM AArch64 four-level
@@ -174,7 +209,7 @@ static int set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd) {
  *  can be used to write data that will be available at the
  *  given vaddr in the given pd.
  *  The required paging structures are automatically allocated,
- *  and the page is mapped with the given p_flags.
+ *  and the page is mapped with the given ELF program header p_flags.
  *
  *  Returns NULL if the allocation fails.
  */
@@ -182,6 +217,11 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
     if (set_up_required_paging_structures(vaddr, pd)) {
         return NULL;
     }
+    
+    // Extract the rights and VM attributes to map the required page with 
+    // from the given ELF program header flags.
+    seL4_CapRights_t rights = parse_cap_rights((uint8_t)p_flags);
+    seL4_ARM_VMAttributes vm_attributes = parse_vm_attributes((uint8_t)p_flags, true);
     
     // Allocate and map the required page.
     uint64_t page_vaddr = mask_bits(vaddr, 12);
@@ -193,8 +233,8 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + alloc_state.page_idx,
         BASE_VSPACE_CAP + pd,
         page_vaddr,
-        seL4_AllRights, // TODO: Use the provided flags to set this properly.
-        SEL4_ARM_DEFAULT_VMATTRIBUTES // TODO: Use the provided flags to set this properly.
+        rights,
+        vm_attributes
     );
     if (err == seL4_NoError) {
         alloc_state.page_idx++;
@@ -222,8 +262,6 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
         sel4cp_dbg_puts("failed to clean up the CSlot containing the temporary page cap used for loading ELF files\n");
         return NULL;
     }
-    
-    // TODO: Maybe the LOADER_TEMP_PAGE_CAP has to be unmapped here?
     
     // Copy the capability for the allocated page to the temporary page cap CSlot.
     err = seL4_CNode_Copy(
@@ -260,9 +298,6 @@ static uint8_t *allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags) {
 
 /*
  *  Loads the ELF program at the given src into the given PD.
- 
- TODO: 
-    - Implement p_flags.
  */
 int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
     elf_header *elf_hdr = (elf_header *)src;
@@ -271,10 +306,6 @@ int elf_loader_load_segments(uint8_t *src, sel4cp_pd pd) {
         elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
         if (prog_hdr->p_type != PT_LOAD)
             continue; // the segment should not be loaded.
-            
-        sel4cp_dbg_puts("loading segment ");
-        sel4cp_dbg_puthex64(i);
-        sel4cp_dbg_puts("\n");
         
         uint8_t *dst_write = allocate_page(prog_hdr->p_vaddr, pd, prog_hdr->p_flags);
         if (dst_write == NULL) {
@@ -384,25 +415,9 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, sel4cp_pd pd) {
                 uint8_t perms = *cap_reader++;
                 uint8_t cached = *cap_reader++;
                 
-                // Setup the capability rights.
-                seL4_CapRights_t rights = seL4_NoRights;
-                if (perms >= 3)
-                    rights = seL4_ReadWrite;
-                else if (perms == 2) {
-                    rights = seL4_CanWrite;
-                }
-                else if (perms == 0) {
-                    rights = seL4_CanRead;
-                }
-                
-                // Setup the VM attributes.
-                uint8_t vm_attributes = 2; // Ensures that parity is enabled.
-                if (cached == 1) {
-                    vm_attributes |= 1;
-                }
-                if (perms < 4) {
-                    vm_attributes |= 4;
-                }
+                // Parse the rights and VM attributes.
+                seL4_CapRights_t rights = parse_cap_rights(perms);
+                seL4_ARM_VMAttributes vm_attributes = parse_vm_attributes(perms, cached); 
                 
                 // Map the page into the child PD's VSpace.
                 uint64_t pd_vspace_cap = BASE_VSPACE_CAP + pd;
@@ -417,7 +432,13 @@ int elf_loader_setup_capabilities(uint8_t *elf_file, sel4cp_pd pd) {
                         return -1;
                     }
                     
-                    seL4_Error err = seL4_ARM_Page_Map(page_cap, pd_vspace_cap, page_vaddr, rights, vm_attributes);
+                    seL4_Error err = seL4_ARM_Page_Map(
+                        page_cap, 
+                        pd_vspace_cap, 
+                        page_vaddr, 
+                        rights, 
+                        vm_attributes
+                    );
                     if (err != seL4_NoError) {
                         sel4cp_dbg_puts("elf_loader: failed to map page for child\n");
                         sel4cp_dbg_puthex64(err);
