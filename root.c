@@ -8,6 +8,8 @@
 
 #define CHILD_PD_ID 1
 
+#define ELF_BUFFER_SIZE 0x3000000
+
 uint8_t *elf_buffer_vaddr;
 uint8_t *elf_current_vaddr;
 uint8_t *test_region_vaddr;
@@ -95,7 +97,14 @@ notified(sel4cp_channel channel)
         return;
     }
     
-    // Read the ELF file.
+    if (elf_current_vaddr - elf_buffer_vaddr >= ELF_BUFFER_SIZE) {
+        sel4cp_dbg_puts("root: cannot read ELF files larger than ");
+        sel4cp_dbg_puthex64(ELF_BUFFER_SIZE);
+        sel4cp_dbg_puts(" bytes\n");
+        return;
+    }
+    
+    // Write to the ELF buffer
     *elf_current_vaddr = c;
     elf_current_vaddr++;
     
