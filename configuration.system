@@ -2,8 +2,6 @@
 <system>
     <memory_region name="UART" size="0x1_000" phys_addr="0x9000000"/>
     <memory_region name="elf_buffer" size="0x30_000" page_size="0x1_000" />
-    <memory_region name="loaded_elf" size="0x3_000" page_size="0x1_000" />
-    
     <memory_region name="test_region" size="0x3_000" page_size="0x1_000" />
     
     <protection_domain pd_id="0" name="root_domain" priority="253">
@@ -17,11 +15,8 @@
         
         <!-- Configuration related to dynamically loading an ELF file -->
         <map mr="elf_buffer" vaddr="0x3_000_000" perms="rw" setvar_vaddr="elf_buffer_vaddr" />
-        <map mr="loaded_elf" vaddr="0x4_000_000" perms="rw" setvar_vaddr="loaded_elf_vaddr" />
     	
-    	<protection_domain pd_id="1" name="empty" priority="200">
-    	    <map mr="loaded_elf" vaddr="0x200_000" perms="rwx" /> 
-        </protection_domain>
+    	<protection_domain pd_id="1" name="empty" priority="200" />
         
         <protection_domain pd_id="2" name="ping" priority="254">
             <program_image path="ping.elf" />

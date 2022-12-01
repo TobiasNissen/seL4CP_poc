@@ -52,11 +52,17 @@ notified(sel4cp_channel channel)
         sel4cp_dbg_puts("root: finished reading file!\n");     
         sel4cp_dbg_puts("root: loading ELF segments for child\n");
         
-        elf_loader_load_segments(elf_buffer_vaddr, loaded_elf_vaddr, CHILD_PD_ENTRY_POINT);
+        if (elf_loader_load_segments(elf_buffer_vaddr, CHILD_PD_ID)) {
+            sel4cp_dbg_puts("root: failed to load all ELF segments!\n");
+            return;
+        }
    
         sel4cp_dbg_puts("root: loaded all ELF segments; setting up capabilities!\n");
         
-        elf_loader_setup_capabilities(elf_buffer_vaddr, HELLO_WORLD_ELF_SIZE, CHILD_PD_ID);
+        if (elf_loader_setup_capabilities(elf_buffer_vaddr, CHILD_PD_ID)) {
+            sel4cp_dbg_puts("root: failed to setup capabilities!\n");
+            return;
+        }
         
         sel4cp_dbg_puts("root: finished setting up capabilities; executing program!\n");
         
