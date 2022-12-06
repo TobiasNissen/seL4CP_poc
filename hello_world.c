@@ -1,9 +1,13 @@
 #include <stdint.h>
 #include <sel4cp.h>
 
+#include "uart.h"
+
 #define PING_CHANNEL_ID 1
+#define IRQ_CHANNEL_ID 4
 
 #define VADDR 0x5000000
+uintptr_t uart_base_vaddr = 0x2000000;
 
 void
 init(void)
@@ -17,9 +21,20 @@ init(void)
 }
 
 void
-notified(sel4cp_channel ch)
+notified(sel4cp_channel channel)
 {
-    sel4cp_dbg_puts("hello_world: got notified on channel ");
-    sel4cp_dbg_puthex64(ch);
-    sel4cp_dbg_puts("\n");
+    if (channel == IRQ_CHANNEL_ID) {
+        uart_handle_irq();
+        char c = uart_get_char();
+        sel4cp_irq_ack(channel);
+    
+        sel4cp_dbg_puts("hello_world: ");
+        sel4cp_dbg_putc(c);
+        sel4cp_dbg_puts("\n");
+    }
+    else {
+        sel4cp_dbg_puts("hello_world: got notified on channel ");
+        sel4cp_dbg_puthex64(channel);
+        sel4cp_dbg_puts("\n");
+    }
 }

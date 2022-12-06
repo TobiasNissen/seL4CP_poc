@@ -18,6 +18,8 @@ uint64_t elf_size = 0;
 char size_buffer[16];
 uint8_t size_buffer_idx = 0;
 
+uintptr_t uart_base_vaddr;
+
 /**
  *  Converts the given hexadecimal number with num_digits digits
  *  into a uint64_t.  

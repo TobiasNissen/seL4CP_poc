@@ -28,6 +28,9 @@
 #define PERIOD_ID 2
 #define CHANNEL_ID 3
 #define MEMORY_REGION_ID 4
+#define IRQ_ID 5
+
+// Defaults for the budget and period of a PD.
 #define DEFAULT_BUDGET 1000
 #define DEFAULT_PERIOD DEFAULT_BUDGET
 
@@ -40,7 +43,7 @@
 
 // Constants used for addressing specific capabilities in a PD.
 #define SCHED_CONTROL_CAP_IDX 6
-#define LOADER_TEMP_PAGE_CAP 8
+#define TEMP_CAP 8
 #define BASE_OUTPUT_NOTIFICATION_CAP 10
 #define BASE_ENDPOINT_CAP 74
 #define BASE_IRQ_CAP 138
@@ -115,7 +118,7 @@ void fault(sel4cp_channel ch, sel4cp_msginfo msginfo);
 
 // The following variables are set by the build tool.
 extern char sel4cp_name[16];
-extern sel4cp_pd current_pd_id;
+extern sel4cp_pd sel4cp_current_pd_id;
 extern uint8_t *sel4cp_internal_loader_temp_page_vaddr;
 
 
@@ -152,11 +155,29 @@ sel4cp_internal_crash(seL4_Error err)
     *x = 0;
 }
 
+/**
+ *  Ensures that the CSlot used for temporary capabilities at index TEMP_CAP is empty.
+ */
+static void
+sel4cp_internal_delete_temp_cap(void) {
+    seL4_Error err = seL4_CNode_Delete(
+        BASE_CNODE_CAP + sel4cp_current_pd_id,
+        TEMP_CAP,
+        PD_CAP_BITS
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_internal_delete_temp_cap: failed to clean up the CSlot used for temporary capabilities, error code = ");
+        sel4cp_dbg_puthex64(err);
+        sel4cp_dbg_puts("\n");
+        
+        sel4cp_internal_crash(err);
+    }
+}
+
 static void
 sel4cp_internal_set_priority(sel4cp_pd pd, uint8_t priority)
 {
-    seL4_Error err;
-    err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, BASE_TCB_CAP + current_pd_id, priority);
+    seL4_Error err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, BASE_TCB_CAP + sel4cp_current_pd_id, priority);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_internal_set_priority: error setting priority\n");
         sel4cp_internal_crash(err);
@@ -166,8 +187,7 @@ sel4cp_internal_set_priority(sel4cp_pd pd, uint8_t priority)
 static void
 sel4cp_internal_set_sched_flags(sel4cp_pd pd, sel4cp_time budget, sel4cp_time period)
 {
-    seL4_Error err;
-    err = seL4_SchedControl_ConfigureFlags(SCHED_CONTROL_CAP_IDX, BASE_SCHED_CONTEXT_CAP + pd,
+    seL4_Error err = seL4_SchedControl_ConfigureFlags(SCHED_CONTROL_CAP_IDX, BASE_SCHED_CONTEXT_CAP + pd,
                                            budget, period, 0, 0, 0);
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_internal_set_sched_flags: error setting scheduling flags\n");
@@ -178,10 +198,8 @@ sel4cp_internal_set_sched_flags(sel4cp_pd pd, sel4cp_time budget, sel4cp_time pe
 static void
 sel4cp_internal_set_up_channel(sel4cp_pd pd_a, sel4cp_pd pd_b, uint8_t channel_id_a, uint8_t channel_id_b) 
 {
-    seL4_Error err;
-    
     // Mint a notification capability to PD a, allowing it to notify PD b.
-    err = seL4_CNode_Mint(
+    seL4_Error err = seL4_CNode_Mint(
         BASE_CNODE_CAP + pd_a, 
         BASE_OUTPUT_NOTIFICATION_CAP + channel_id_a,
         PD_CAP_BITS,
@@ -213,6 +231,55 @@ sel4cp_internal_set_up_channel(sel4cp_pd pd_a, sel4cp_pd pd_b, uint8_t channel_i
         sel4cp_dbg_puts("sel4cp_internal_set_up_channel: failed set up channel capability for PD ");
         sel4cp_dbg_puthex64(pd_b);
         sel4cp_dbg_puts("\n");
+        sel4cp_internal_crash(err);
+    }
+}
+
+static void
+sel4cp_internal_set_up_irq(sel4cp_pd pd, uint8_t parent_irq_channel_id, uint8_t child_irq_channel_id) 
+{
+    // Ensure that the CSlot used for temporary capabilities is empty.
+    sel4cp_internal_delete_temp_cap();
+
+    // Create a badged capability to the channel object of the child PD,
+    // ensuring that the child is notified with the correct channel id.
+    seL4_Error err = seL4_CNode_Mint(
+        BASE_CNODE_CAP + sel4cp_current_pd_id, 
+        TEMP_CAP,
+        PD_CAP_BITS,
+        BASE_CNODE_CAP + sel4cp_current_pd_id,
+        BASE_UNBADGED_CHANNEL_CAP + pd,
+        PD_CAP_BITS,
+        seL4_AllRights,
+        1 << child_irq_channel_id
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_internal_set_up_irq: failed to create a badged capability to the child PD to be used for IRQ handling\n");
+        sel4cp_internal_crash(err);
+    }
+
+    // Register the channel object of the child PD to be notified for the given IRQ,
+    // using the badged capability created above.
+    err = seL4_IRQHandler_SetNotification(
+        BASE_IRQ_CAP + parent_irq_channel_id,
+        TEMP_CAP
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_internal_set_up_irq: failed to register child as the handler of irq\n");
+        sel4cp_internal_crash(err);
+    }
+    
+    // Move the IRQHandler capability into the CSpace of the child PD.
+    err = seL4_CNode_Move(
+        BASE_CNODE_CAP + pd,
+        BASE_IRQ_CAP + child_irq_channel_id,
+        PD_CAP_BITS,
+        BASE_CNODE_CAP + sel4cp_current_pd_id,
+        BASE_IRQ_CAP + parent_irq_channel_id,
+        PD_CAP_BITS
+    );
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_internal_set_up_irq: failed to move the IRQHandler capability to the child PD\n");
         sel4cp_internal_crash(err);
     }
 }
@@ -395,31 +462,21 @@ sel4cp_internal_allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags)
     }
     
     if (!alloc_state.loader_temp_page_allocated) {
-        if (sel4cp_internal_set_up_required_paging_structures((uint64_t)sel4cp_internal_loader_temp_page_vaddr, current_pd_id)) {
+        if (sel4cp_internal_set_up_required_paging_structures((uint64_t)sel4cp_internal_loader_temp_page_vaddr, sel4cp_current_pd_id)) {
             return NULL;
         }
         alloc_state.loader_temp_page_allocated = true;
     }
     
     // Ensure that the capability slot for the page capability mapped into the current PD's VSpace is empty.
-    err = seL4_CNode_Delete(
-        BASE_CNODE_CAP + current_pd_id,
-        LOADER_TEMP_PAGE_CAP,
-        PD_CAP_BITS
-    );
-    if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_internal_allocate_page: failed to clean up the CSlot containing the temporary page cap used for loading ELF files, error code = ");
-        sel4cp_dbg_puthex64(err);
-        sel4cp_dbg_puts("\n");
-        return NULL;
-    }
+    sel4cp_internal_delete_temp_cap();
     
     // Copy the capability for the allocated page to the temporary page cap CSlot.
     err = seL4_CNode_Copy(
-        BASE_CNODE_CAP + current_pd_id,
-        LOADER_TEMP_PAGE_CAP,
+        BASE_CNODE_CAP + sel4cp_current_pd_id,
+        TEMP_CAP,
         PD_CAP_BITS,
-        BASE_CNODE_CAP + current_pd_id,
+        BASE_CNODE_CAP + sel4cp_current_pd_id,
         BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + alloc_state.page_idx - 1,
         PD_CAP_BITS,
         seL4_AllRights
@@ -433,8 +490,8 @@ sel4cp_internal_allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags)
     
     // Map the copied page capability into the VSpace of the current PD.
     err = seL4_ARM_Page_Map(
-        LOADER_TEMP_PAGE_CAP,
-        BASE_VSPACE_CAP + current_pd_id,
+        TEMP_CAP,
+        BASE_VSPACE_CAP + sel4cp_current_pd_id,
         (uint64_t)sel4cp_internal_loader_temp_page_vaddr,
         seL4_ReadWrite,
         SEL4_ARM_DEFAULT_VMATTRIBUTES
@@ -532,6 +589,10 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                     uint64_t page_cap = BASE_SHARED_MEMORY_REGION_PAGES + id + j;
                     uint64_t page_vaddr = vaddr + (j * 0x1000);
                     
+                    sel4cp_dbg_puts("Mapping page at CSlot = ");
+                    sel4cp_dbg_puthex64(page_cap);
+                    sel4cp_dbg_puts("\n");
+                    
                     // Ensure that all required higher-level paging structures are mapped before
                     // mapping this page.
                     if (sel4cp_internal_set_up_required_paging_structures(page_vaddr, pd)) {
@@ -563,6 +624,19 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                 sel4cp_dbg_puthex64(perms);
                 sel4cp_dbg_puts(", cached = ");
                 sel4cp_dbg_puthex64(cached);
+                sel4cp_dbg_puts("\n");
+                break;
+            }
+            case IRQ_ID: {
+                uint8_t parent_irq_channel_id = *cap_reader++;
+                uint8_t child_irq_channel_id = *cap_reader++;
+                
+                sel4cp_internal_set_up_irq(pd, parent_irq_channel_id, child_irq_channel_id);
+                
+                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set up irq - parent_irq_channel_id = ");
+                sel4cp_dbg_puthex64(parent_irq_channel_id);
+                sel4cp_dbg_puts(", child_irq_channel_id = ");
+                sel4cp_dbg_puthex64(child_irq_channel_id);
                 sel4cp_dbg_puts("\n");
                 break;
             }
