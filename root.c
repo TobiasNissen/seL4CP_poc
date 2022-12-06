@@ -2,7 +2,6 @@
 #include <sel4cp.h>
 
 #include "uart.h"
-#include "elf_loader.h"
 
 #define UART_IRQ_CHANNEL_ID 0
 
@@ -114,7 +113,7 @@ notified(sel4cp_channel channel)
         elf_current_vaddr = elf_buffer_vaddr;
         elf_size = 0;
         
-        if (elf_loader_run(elf_buffer_vaddr, CHILD_PD_ID)) {
+        if (sel4cp_pd_run_elf(elf_buffer_vaddr, CHILD_PD_ID)) {
             sel4cp_dbg_puts("root: failed to run the program in the child PD!\n");
             return;
         }
