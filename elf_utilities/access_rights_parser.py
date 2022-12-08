@@ -2,34 +2,17 @@ import sys
 sys.modules['_elementtree'] = None
 import xml.etree.ElementTree as ET
 
-from utilities import ceil_div
 from pathlib import Path
 from typing import Optional
-from system_parser import parse_system, MemoryRegion, Channel, Map, Irq, ProtectionDomain, SystemDescription
-from access_rights import AccessRight, SchedulingAccessRight, ChannelAccessRight, MemoryRegionAccessRight, IrqAccessRight, EXECUTABLE_FLAG, WRITABLE_FLAG, READABLE_FLAG, PAGE_SIZE
-from xml_utilities import LineNumberingParser, InvalidSystemFormat, InvalidXmlElement, MissingAttribute, checked_lookup, get_attribute_or_default
 
+from utilities import ceil_div
+from system_parser import parse_system
+from system_description import MemoryRegion, Channel, Map, Irq, ProtectionDomain, SystemDescription
+from xml_utilities import LineNumberingParser, InvalidSystemFormat, InvalidXmlElement, MissingAttribute, checked_lookup, get_attribute_or_default, get_int_in_range
 
-def get_int_in_range(element: ET.Element, attribute_name: str, min_value: int, max_value: int, default_value: Optional[int] = None) -> int:
-    """
-        Reads the attribute with the given attribute_name from the
-        given element. Ensures that the value is in the range
-        [min_value; max_value]. 
-        Raises an exception if a valid integer can not be extracted.
-    """
-    if default_value is None:
-        attribute_str_value = checked_lookup(element, attribute_name)
-    else:
-        attribute_str_value = get_attribute_or_default(element, attribute_name, "")
-        if attribute_str_value == "":
-            return default_value
-    try:
-        attribute_value = int(attribute_str_value, 0)
-        if attribute_value < min_value or attribute_value > max_value:
-            raise InvalidXmlElement(element, f"The attribute '{attribute_name}' must be in the range [{min_value}; {max_value}]")
-        return attribute_value
-    except ValueError:
-        raise InvalidXmlElement(element, f"The attribute '{attribute_name}' is not an integer")
+from protection_model.base.access_right import AccessRight
+from protection_model.sel4cp.access_rights import SchedulingAccessRight, ChannelAccessRight, MemoryRegionAccessRight, IrqAccessRight
+from protection_model.sel4cp.constants import EXECUTABLE_FLAG, WRITABLE_FLAG, READABLE_FLAG, PAGE_SIZE
 
 
 def get_loader_pd(element: ET.Element, protection_domains: list[ProtectionDomain]) -> ProtectionDomain:

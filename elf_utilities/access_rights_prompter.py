@@ -1,13 +1,12 @@
-import sys
-from pathlib import Path
-from dataclasses import dataclass
 from typing import Optional
 
 from utilities import ceil_div
-from system_parser import parse_system, MemoryRegion, Channel, Map, Irq, ProtectionDomain, SystemDescription
-from access_rights import AccessRight, SchedulingAccessRight, ChannelAccessRight, MemoryRegionAccessRight, IrqAccessRight, EXECUTABLE_FLAG, WRITABLE_FLAG, READABLE_FLAG, PAGE_SIZE
-from elf_patcher import patch_elf
-from access_rights_parser import parse_access_rights
+from system_parser import parse_system 
+from system_description import MemoryRegion, Channel, Map, Irq, ProtectionDomain, SystemDescription
+
+from protection_model.base.access_right import AccessRight
+from protection_model.sel4cp.access_rights import SchedulingAccessRight, ChannelAccessRight, MemoryRegionAccessRight, IrqAccessRight
+from protection_model.sel4cp.constants import EXECUTABLE_FLAG, WRITABLE_FLAG, READABLE_FLAG, PAGE_SIZE
 
 
 def get_int_in_range(parameter_name: str, min_value: int, max_value: int, default_value: Optional[int] = None, is_bool: bool = False) -> int:
@@ -164,29 +163,5 @@ def get_access_rights(system_description: SystemDescription) -> list[AccessRight
             break
     
     return [scheduling_access_right] + channel_access_rights + memory_region_access_rights + irq_access_rights
-    
-    
-
-if __name__ == "__main__":
-    num_args = len(sys.argv)
-    if num_args != 3 and num_args != 4:
-        print(f"Usage: python3 capability_configurator.py <target_ELF_file> <system_configuration_file> [<ELF_access_rights_file>]")
-    
-    target_elf = Path(sys.argv[1])
-    system_file = Path(sys.argv[2])
-    
-    system_description = parse_system(system_file)
-   
-    if num_args == 4: # read the access rights from the provided file.
-        elf_access_rights_file = Path(sys.argv[3])
-        access_rights = parse_access_rights(elf_access_rights_file, system_description)
-    else: # get the access rights interactively from the user.
-        access_rights = get_access_rights(system_description)
-    
-    patch_elf(target_elf, access_rights)
-     
-    
-    
-    
     
     

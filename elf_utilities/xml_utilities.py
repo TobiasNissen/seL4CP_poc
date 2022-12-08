@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 import xml.etree.ElementTree as ET
 
 class LineNumberingParser(ET.XMLParser):
@@ -50,6 +51,26 @@ def get_attribute_or_default(element: ET.Element, attr: str, default: str) -> st
     else:
         return default
         
-        
+
+def get_int_in_range(element: ET.Element, attribute_name: str, min_value: int, max_value: int, default_value: Optional[int] = None) -> int:
+    """
+        Reads the attribute with the given attribute_name from the
+        given element. Ensures that the value is in the range
+        [min_value; max_value]. 
+        Raises an exception if a valid integer can not be extracted.
+    """
+    if default_value is None:
+        attribute_str_value = checked_lookup(element, attribute_name)
+    else:
+        attribute_str_value = get_attribute_or_default(element, attribute_name, "")
+        if attribute_str_value == "":
+            return default_value
+    try:
+        attribute_value = int(attribute_str_value, 0)
+        if attribute_value < min_value or attribute_value > max_value:
+            raise InvalidXmlElement(element, f"The attribute '{attribute_name}' must be in the range [{min_value}; {max_value}]")
+        return attribute_value
+    except ValueError:
+        raise InvalidXmlElement(element, f"The attribute '{attribute_name}' is not an integer")   
         
         
