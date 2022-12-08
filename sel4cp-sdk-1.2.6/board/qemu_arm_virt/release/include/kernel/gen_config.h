@@ -15,8 +15,9 @@
 /* disabled: CONFIG_ARCH_X86_64 */
 /* disabled: CONFIG_ARCH_IA32 */
 #define CONFIG_SEL4_ARCH  aarch64
-#define CONFIG_ARCH_ARM  1  /* KernelArchARM=ON */
+/* disabled: CONFIG_ARCH_ARM */
 #define CONFIG_ARCH  arm
+#define CONFIG_ARCH_ARM  1  /* KernelArchARM=ON */
 #define CONFIG_WORD_SIZE  64
 #define CONFIG_ARM_PLAT  qemu-arm-virt
 /* disabled: CONFIG_PLAT_BCM2711 */
@@ -101,20 +102,22 @@
 /* disabled: CONFIG_HARDWARE_DEBUG_API */
 /* disabled: CONFIG_PRINTING */
 /* disabled: CONFIG_KERNEL_INVOCATION_REPORT_ERROR_IPC */
-#define CONFIG_NO_BENCHMARKS  1  /* KernelBenchmarksNone=ON */
+/* disabled: CONFIG_NO_BENCHMARKS */
 #define CONFIG_KERNEL_BENCHMARK  none
+#define CONFIG_NO_BENCHMARKS  1  /* KernelBenchmarksNone=ON */
 /* disabled: CONFIG_ENABLE_BENCHMARKS */
 /* disabled: CONFIG_KERNEL_LOG_BUFFER */
 #define CONFIG_MAX_NUM_TRACE_POINTS  0
 /* disabled: CONFIG_IRQ_REPORTING */
 /* disabled: CONFIG_COLOUR_PRINTING */
 #define CONFIG_USER_STACK_TRACE_LENGTH  0
-#define CONFIG_KERNEL_OPT_LEVEL_O2  1  /* KernelOptimisationO2=ON */
+/* disabled: CONFIG_KERNEL_OPT_LEVEL_O2 */
 /* disabled: CONFIG_KERNEL_OPT_LEVEL_OS */
 /* disabled: CONFIG_KERNEL_OPT_LEVEL_O0 */
 /* disabled: CONFIG_KERNEL_OPT_LEVEL_O1 */
 /* disabled: CONFIG_KERNEL_OPT_LEVEL_O3 */
 #define CONFIG_KERNEL_OPT_LEVEL  -O2
+#define CONFIG_KERNEL_OPT_LEVEL_O2  1  /* KernelOptimisationO2=ON */
 /* disabled: CONFIG_KERNEL_FWHOLE_PROGRAM */
 /* disabled: CONFIG_DANGEROUS_CODE_INJECTION */
 /* disabled: CONFIG_DEBUG_DISABLE_PREFETCHERS */
