@@ -1,6 +1,11 @@
 import struct
 from abc import ABC, abstractmethod
 
+PAGE_SIZE = 0x1000 # 4 KiB
+
+EXECUTABLE_FLAG = 1
+WRITABLE_FLAG = 2
+READABLE_FLAG = 4
 
 # TODO: Put this into a separate file.
 class AccessRight(ABC):
