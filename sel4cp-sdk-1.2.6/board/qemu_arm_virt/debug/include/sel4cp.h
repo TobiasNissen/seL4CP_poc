@@ -23,12 +23,10 @@
 #define P_FLAGS_READABLE 4 // Bit indicating that a segment should be readable.
 
 // Constants related to the protection model.
-#define PRIORITY_ID 0
-#define BUDGET_ID 1
-#define PERIOD_ID 2
-#define CHANNEL_ID 3
-#define MEMORY_REGION_ID 4
-#define IRQ_ID 5
+#define SCHEDULING_ID 0
+#define CHANNEL_ID 1
+#define MEMORY_REGION_ID 2
+#define IRQ_ID 3
 
 // Defaults for the budget and period of a PD.
 #define DEFAULT_BUDGET 1000
@@ -523,31 +521,27 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
     uint64_t num_capabilities = *((uint64_t *) cap_reader);
     cap_reader += 8;
     
-    uint64_t budget = DEFAULT_BUDGET;
-    uint64_t period = DEFAULT_PERIOD;
-    bool period_set_explicitly = false;
-    
     // Setup all capabilities.
     for (uint64_t i = 0; i < num_capabilities; i++) {
         uint8_t cap_type_id = *cap_reader++;
         switch (cap_type_id) {
-            case PRIORITY_ID: {
+            case SCHEDULING_ID: {
                 uint8_t priority = *cap_reader++;
+                uint64_t budget = *((uint64_t *)cap_reader);
+                cap_reader += 8;
+                uint64_t period = *((uint64_t *)cap_reader);
+                cap_reader += 8;
+                
                 sel4cp_internal_set_priority(pd, priority);
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set priority ");
+                sel4cp_internal_set_sched_flags(pd, budget, period);
+                
+                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set scheduling parameters, priority = ");
                 sel4cp_dbg_puthex64(priority);
+                sel4cp_dbg_puts(" , budget = ");
+                sel4cp_dbg_puthex64(budget);
+                sel4cp_dbg_puts(" , period = ");
+                sel4cp_dbg_puthex64(period);
                 sel4cp_dbg_puts("\n");
-                break;
-            }
-            case BUDGET_ID: {
-                budget = *((uint64_t *)cap_reader);
-                cap_reader += 8;
-                break;
-            }
-            case PERIOD_ID: {
-                period = *((uint64_t *)cap_reader);
-                period_set_explicitly = true;
-                cap_reader += 8;
                 break;
             }
             case CHANNEL_ID: {
@@ -646,18 +640,6 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                 sel4cp_dbg_puts("\n");
                 return -1;
         }
-    }
-    
-    // Set the scheduling flags if they have been explicitly provided.
-    if (budget != DEFAULT_BUDGET || period != DEFAULT_PERIOD) {
-        if (!period_set_explicitly)
-            period = budget; // By default, the period is the same as the budget.
-        sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set scheduling flags: budget = ");
-        sel4cp_dbg_puthex64(budget);
-        sel4cp_dbg_puts(" , period = ");
-        sel4cp_dbg_puthex64(period);
-        sel4cp_dbg_puts("\n");
-        sel4cp_internal_set_sched_flags(pd, budget, period);
     }
     
     return 0;

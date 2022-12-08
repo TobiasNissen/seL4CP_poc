@@ -186,9 +186,6 @@ if __name__ == "__main__":
         
     access_rights = get_access_rights(system_description)
     
-    for access_right in access_rights:
-        print(access_right)
-        
     patch_elf(target_elf, access_rights)
      
     
