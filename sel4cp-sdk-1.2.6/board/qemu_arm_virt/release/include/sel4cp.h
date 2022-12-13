@@ -28,30 +28,44 @@
 #define MEMORY_REGION_ID 2
 #define IRQ_ID 3
 
-// Defaults for the budget and period of a PD.
-#define DEFAULT_BUDGET 1000
-#define DEFAULT_PERIOD DEFAULT_BUDGET
-
 // Constants related to the organization of the CSpace in a PD.
 #define PD_CAP_BITS 11
-#define POOL_NUM_PAGE_UPPER_DIRECTORIES 5
-#define POOL_NUM_PAGE_DIRECTORIES 5
-#define POOL_NUM_PAGE_TABLES 10
-#define POOL_NUM_PAGES 100
+#define POOL_NUM_PD_TARGETS 5
+#define POOL_NUM_TCBS POOL_NUM_PD_TARGETS
+#define POOL_NUM_NOTIFICATIONS POOL_NUM_PD_TARGETS
+#define POOL_NUM_CNODES POOL_NUM_PD_TARGETS
+#define POOL_NUM_SCHEDCONTEXTS POOL_NUM_PD_TARGETS
+#define POOL_NUM_VSPACES POOL_NUM_PD_TARGETS
+#define POOL_NUM_PAGE_UPPER_DIRECTORIES (POOL_NUM_PD_TARGETS * 2)
+#define POOL_NUM_PAGE_DIRECTORIES (POOL_NUM_PD_TARGETS * 4)
+#define POOL_NUM_PAGE_TABLES (POOL_NUM_PD_TARGETS * 6)
+#define POOL_NUM_PAGES (POOL_NUM_PD_TARGETS * 20)
 
 // Constants used for addressing specific capabilities in a PD.
+#define INPUT_CAP_IDX 1
+#define FAULT_EP_CAP_IDX 2
+#define REPLY_CAP_IDX 4
+#define ASID_POOL_CAP_IDX 5
 #define SCHED_CONTROL_CAP_IDX 6
 #define TEMP_CAP 8
 #define BASE_OUTPUT_NOTIFICATION_CAP 10
-#define BASE_ENDPOINT_CAP 74
-#define BASE_IRQ_CAP 138
-#define BASE_TCB_CAP 202
-#define BASE_SCHED_CONTEXT_CAP 266
-#define BASE_UNBADGED_CHANNEL_CAP 330
-#define BASE_CNODE_CAP 394
-#define BASE_VSPACE_CAP 458
-#define BASE_PAGING_STRUCTURE_POOL 522
-#define BASE_SHARED_MEMORY_REGION_PAGES (BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + POOL_NUM_PAGES)
+#define BASE_OUTPUT_ENDPOINT_CAP (BASE_OUTPUT_NOTIFICATION_CAP + 64)
+#define BASE_IRQ_CAP (BASE_OUTPUT_ENDPOINT_CAP + 64)
+#define BASE_TCB_CAP (BASE_IRQ_CAP + 64) 
+#define BASE_SCHED_CONTEXT_CAP (BASE_TCB_CAP + 64)
+#define BASE_UNBADGED_CHANNEL_CAP (BASE_SCHED_CONTEXT_CAP + 64)
+#define BASE_CNODE_CAP (BASE_UNBADGED_CHANNEL_CAP + 64)
+#define BASE_VSPACE_CAP (BASE_CNODE_CAP + 64)
+#define BASE_TCB_POOL (BASE_VSPACE_CAP + 64)
+#define BASE_NOTIFICATION_POOL (BASE_TCB_POOL + POOL_NUM_TCBS)
+#define BASE_CNODE_POOL (BASE_NOTIFICATION_POOL + POOL_NUM_NOTIFICATIONS)
+#define BASE_SCHEDCONTEXT_POOL (BASE_CNODE_POOL + POOL_NUM_CNODES)
+#define BASE_VSPACE_POOL (BASE_SCHEDCONTEXT_POOL + POOL_NUM_SCHEDCONTEXTS)
+#define BASE_PAGE_UPPER_DIRECTORY_POOL (BASE_VSPACE_POOL + POOL_NUM_VSPACES)
+#define BASE_PAGE_DIRECTORY_POOL (BASE_PAGE_UPPER_DIRECTORY_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES)
+#define BASE_PAGE_TABLE_POOL (BASE_PAGE_DIRECTORY_POOL + POOL_NUM_PAGE_DIRECTORIES)
+#define BASE_PAGE_POOL (BASE_PAGE_TABLE_POOL + POOL_NUM_PAGE_TABLES)
+#define BASE_SHARED_MEMORY_REGION_PAGES (BASE_PAGE_POOL + POOL_NUM_PAGES)
 
 // General settings.
 #define SEL4CP_MAX_CHANNELS 63
@@ -352,7 +366,7 @@ sel4cp_internal_set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd)
         return -1;
     }
     seL4_Error err = seL4_ARM_PageUpperDirectory_Map(
-        BASE_PAGING_STRUCTURE_POOL + alloc_state.page_upper_directory_idx,
+        BASE_PAGE_UPPER_DIRECTORY_POOL + alloc_state.page_upper_directory_idx,
         pd_vspace_cap,
         page_upper_directory_vaddr,
         SEL4_ARM_DEFAULT_VMATTRIBUTES 
@@ -374,7 +388,7 @@ sel4cp_internal_set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd)
         return -1;
     }
     err = seL4_ARM_PageDirectory_Map(
-        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + alloc_state.page_directory_idx,
+        BASE_PAGE_DIRECTORY_POOL + alloc_state.page_directory_idx,
         pd_vspace_cap,
         page_directory_vaddr,
         SEL4_ARM_DEFAULT_VMATTRIBUTES 
@@ -396,7 +410,7 @@ sel4cp_internal_set_up_required_paging_structures(uint64_t vaddr, sel4cp_pd pd)
         return -1;
     }
     err = seL4_ARM_PageTable_Map(
-        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + alloc_state.page_table_idx,
+        BASE_PAGE_TABLE_POOL + alloc_state.page_table_idx,
         pd_vspace_cap,
         page_table_vaddr,
         SEL4_ARM_DEFAULT_VMATTRIBUTES 
@@ -443,7 +457,7 @@ sel4cp_internal_allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags)
         return NULL;
     }
     seL4_Error err = seL4_ARM_Page_Map(
-        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + alloc_state.page_idx,
+        BASE_PAGE_POOL + alloc_state.page_idx,
         BASE_VSPACE_CAP + pd,
         page_vaddr,
         rights,
@@ -475,7 +489,7 @@ sel4cp_internal_allocate_page(uint64_t vaddr, sel4cp_pd pd, uint32_t p_flags)
         TEMP_CAP,
         PD_CAP_BITS,
         BASE_CNODE_CAP + sel4cp_current_pd_id,
-        BASE_PAGING_STRUCTURE_POOL + POOL_NUM_PAGE_UPPER_DIRECTORIES + POOL_NUM_PAGE_DIRECTORIES + POOL_NUM_PAGE_TABLES + alloc_state.page_idx - 1,
+        BASE_PAGE_POOL + alloc_state.page_idx - 1,
         PD_CAP_BITS,
         seL4_AllRights
     );
@@ -695,7 +709,7 @@ sel4cp_pd_stop(sel4cp_pd pd)
 static inline sel4cp_msginfo
 sel4cp_ppcall(sel4cp_channel ch, sel4cp_msginfo msginfo)
 {
-    return seL4_Call(BASE_ENDPOINT_CAP + ch, msginfo);
+    return seL4_Call(BASE_OUTPUT_ENDPOINT_CAP + ch, msginfo);
 }
 
 static inline sel4cp_msginfo
