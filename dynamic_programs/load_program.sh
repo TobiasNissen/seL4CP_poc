@@ -12,3 +12,5 @@ echo $SIZE > $2
 
 echo "Sending ELF file!"
 cat $1 > $2
+
+echo "Sent ELF file!"

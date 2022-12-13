@@ -7,9 +7,10 @@
 
 #define CHILD_PD_ID 1
 
-#define ELF_BUFFER_SIZE 0x3000000
+#define ELF_BUFFER_SIZE 0x30000
 
-uint8_t *elf_buffer_vaddr;
+uint8_t elf_buffer[ELF_BUFFER_SIZE];
+
 uint8_t *elf_current_vaddr;
 uint8_t *test_region_vaddr;
 
@@ -56,7 +57,7 @@ void
 init(void)
 {
     uart_init();
-    elf_current_vaddr = elf_buffer_vaddr;
+    elf_current_vaddr = elf_buffer;
     sel4cp_dbg_puts("root: initialized!\n");
     sel4cp_dbg_puts("root: writing 42 (0x2a) to shared memory region!\n");
     *test_region_vaddr = 42;
@@ -81,6 +82,13 @@ notified(sel4cp_channel channel)
             elf_size = parse_hex64(size_buffer, size_buffer_idx);
             
             size_buffer_idx = 0;
+            
+            if (elf_size > ELF_BUFFER_SIZE) {
+                sel4cp_dbg_puts("root: cannot read ELF files larger than ");
+                sel4cp_dbg_puthex64(ELF_BUFFER_SIZE);
+                sel4cp_dbg_puts(" bytes\n");
+                return;
+            }
         
             sel4cp_dbg_puts("root: ready to read ELF file of size ");
             sel4cp_dbg_puthex64(elf_size);
@@ -97,25 +105,26 @@ notified(sel4cp_channel channel)
         
         return;
     }
-    
-    if (elf_current_vaddr - elf_buffer_vaddr >= ELF_BUFFER_SIZE) {
-        sel4cp_dbg_puts("root: cannot read ELF files larger than ");
-        sel4cp_dbg_puthex64(ELF_BUFFER_SIZE);
-        sel4cp_dbg_puts(" bytes\n");
-        return;
-    }
-    
+        
     // Write to the ELF buffer
     *elf_current_vaddr = c;
     elf_current_vaddr++;
     
-    if (elf_current_vaddr - elf_buffer_vaddr >= elf_size) {
+    if (elf_current_vaddr - elf_buffer >= elf_size) {
         sel4cp_dbg_puts("root: finished reading ELF file!\n");   
         
-        elf_current_vaddr = elf_buffer_vaddr;
+        elf_current_vaddr = elf_buffer;
         elf_size = 0;
         
-        if (sel4cp_pd_run_elf(elf_buffer_vaddr, CHILD_PD_ID)) {
+        if (sel4cp_pd_create(CHILD_PD_ID)) {
+            sel4cp_dbg_puts("root: failed to create a new PD with id ");
+            sel4cp_dbg_puthex64(CHILD_PD_ID);
+            sel4cp_dbg_puts("\n");
+            return;
+        }
+        sel4cp_dbg_puts("root: successfully created a new PD!\n");
+        
+        if (sel4cp_pd_run_elf(elf_buffer, CHILD_PD_ID)) {
             sel4cp_dbg_puts("root: failed to run the program in the child PD!\n");
             return;
         }
