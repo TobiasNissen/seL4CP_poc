@@ -12,8 +12,8 @@
         <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false" setvar_vaddr="uart_base_vaddr"/>
         <irq irq="33" id="0"/>
         
-        <protection_domain pd_id="2" name="ping" priority="254">
-            <program_image path="ping.elf" />
+        <protection_domain pd_id="2" name="pong" priority="254">
+            <program_image path="pong.elf" />
         </protection_domain>
     </protection_domain>
 </system>
