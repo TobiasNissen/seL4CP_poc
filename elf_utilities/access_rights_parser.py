@@ -20,7 +20,7 @@ def get_loader_pd(element: ET.Element, protection_domains: list[ProtectionDomain
     loader_pd = next((pd for pd in protection_domains if pd.name == loader_pd_name), None)
     
     if loader_pd is None:
-        raise InvalidXmlElement(element, "No protection domain with name '{loader_pd_name}' exists in the provided system description")
+        raise InvalidXmlElement(element, f"No protection domain with name '{loader_pd_name}' exists in the provided system description")
         
     return loader_pd
 
@@ -46,7 +46,7 @@ def get_perms(element: ET.Element) -> int:
         elif perm == 'x':
             perms |= EXECUTABLE_FLAG
         else:
-            raise InvalidXmlElement(element, "The permission '{perm}' is not a valid permission. Valid permissions are 'r', 'w', and 'x'")
+            raise InvalidXmlElement(element, f"The permission '{perm}' is not a valid permission. Valid permissions are 'r', 'w', and 'x'")
             
     return perms
 
@@ -83,7 +83,7 @@ def parse_memory_region_access_right(element: ET.Element, maps: list[Map], memor
 def parse_channel_access_right(element: ET.Element, protection_domains: dict[str, ProtectionDomain]) -> ChannelAccessRight:
     target_pd_name = checked_lookup(element, "target_pd")
     if target_pd_name not in protection_domains:
-        raise InvalidXmlException(element, "No protection domain with the name '{target_pd_name}' exists in the given system")
+        raise InvalidXmlElement(element, f"No protection domain with the name '{target_pd_name}' exists in the given system")
     
     target_pd = protection_domains[target_pd_name]
     
@@ -96,7 +96,7 @@ def parse_channel_access_right(element: ET.Element, protection_domains: dict[str
 def parse_irq_access_right(element: ET.Element, irqs: dict[int, Irq]) -> IrqAccessRight:
     irq = get_int_in_range(element, "irq", 0, (1 << 64) - 1)
     if irq not in irqs:
-        raise InvalidXmlException(element, "The targeted protection domain can not provide the program to load the capability to handle the IRQ number {irq}")
+        raise InvalidXmlElement(element, f"The targeted protection domain can not provide the program to load the capability to handle the IRQ number {irq}")
     
     target_irq = irqs[irq]
     
