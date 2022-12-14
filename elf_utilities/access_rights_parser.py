@@ -27,7 +27,7 @@ def get_loader_pd(element: ET.Element, protection_domains: list[ProtectionDomain
 
 def parse_scheduling_access_right(element: ET.Element, loader_pd: ProtectionDomain):
     priority = get_int_in_range(element, "priority", 0, loader_pd.priority, loader_pd.priority)
-    mcp = get_int_in_range(element, "mcp", 0, 255, priority)
+    mcp = get_int_in_range(element, "mcp", 0, 254, priority)
     budget = get_int_in_range(element, "budget", 0, (1 << 64) - 1, 1000)
     period = get_int_in_range(element, "period", 0, (1 << 64) - 1, budget)
     

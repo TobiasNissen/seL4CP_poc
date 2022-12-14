@@ -3,7 +3,7 @@
     <memory_region name="UART" size="0x1_000" phys_addr="0x9000000"/>
     <memory_region name="test_region" size="0x3_000" page_size="0x1_000" />
     
-    <protection_domain pd_id="0" name="root_domain" priority="253">
+    <protection_domain pd_id="0" name="root_domain" priority="253" mcp="253">
     	<program_image path="root.elf" />
     	
     	<map mr="test_region" vaddr="0x5_000_000" perms="rw" setvar_vaddr="test_region_vaddr" />
