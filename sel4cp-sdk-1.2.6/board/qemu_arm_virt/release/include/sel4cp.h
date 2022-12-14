@@ -976,14 +976,16 @@ sel4cp_pd_run_elf(uint8_t *src, sel4cp_pd pd)
 
 /**
  *  Creates a new PD with the given id.
- *  No program is loaded for the PD, and the PD is not started.
+ *  If src is not NULL, the ELF file pointed to by this pointer
+ *  is loaded and the PD is started.
+ *  Otherwise, no program is loaded for the PD, and the PD is not started.
  *  Precondition: No PD with the given id already exists in the system.
  *
  *  Returns 0 on success.
  *  Returns -1 if an error occurs.
  */
 static int
-sel4cp_pd_create(sel4cp_pd pd) 
+sel4cp_pd_create(sel4cp_pd pd, uint8_t *src) 
 {
     // Allocate a TCB for the new PD.
     if (alloc_state.tcb_idx >= POOL_NUM_TCBS) {
@@ -1220,6 +1222,9 @@ sel4cp_pd_create(sel4cp_pd pd)
         return -1;
     }
     
+    if (src != NULL) {
+        return sel4cp_pd_run_elf(src, pd);
+    }
     
     return 0;
 }

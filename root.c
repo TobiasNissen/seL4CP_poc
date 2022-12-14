@@ -116,22 +116,13 @@ notified(sel4cp_channel channel)
         elf_current_vaddr = elf_buffer;
         elf_size = 0;
         
-        if (sel4cp_pd_create(CHILD_PD_ID)) {
+        if (sel4cp_pd_create(CHILD_PD_ID, elf_buffer)) {
             sel4cp_dbg_puts("root: failed to create a new PD with id ");
             sel4cp_dbg_puthex64(CHILD_PD_ID);
-            sel4cp_dbg_puts("\n");
+            sel4cp_dbg_puts(" and load the provided ELF file\n");
             return;
         }
-        sel4cp_dbg_puts("root: successfully created a new PD!\n");
-        
-        if (sel4cp_pd_run_elf(elf_buffer, CHILD_PD_ID)) {
-            sel4cp_dbg_puts("root: failed to run the program in the child PD!\n");
-            return;
-        }
-        
-        sel4cp_dbg_puts("root: successfully started the program in the child PD\n");
-        
-        sel4cp_dbg_puts("root: ready to read a new ELF file!\n");
+        sel4cp_dbg_puts("root: successfully started the program in a new child PD\n");
     }
 }
 
