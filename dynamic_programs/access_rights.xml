@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <capabilities loader_pd="root_domain">
-    <scheduling priority="1" budget="100" period="2000" />
+    <scheduling priority="1" mcp="1" budget="100" period="2000" />
     
     <channel target_pd="ping" target_pd_channel_id="1" own_pd_channel_id="1" />
     

@@ -221,9 +221,16 @@ sel4cp_internal_delete_temp_cap(void) {
 }
 
 static void
-sel4cp_internal_set_priority(sel4cp_pd pd, uint8_t priority)
+sel4cp_internal_set_priority(sel4cp_pd pd, uint8_t priority, uint8_t mcp)
 {
-    seL4_Error err = seL4_TCB_SetPriority(BASE_TCB_CAP + pd, BASE_TCB_CAP + sel4cp_current_pd_id, priority);
+    seL4_Error err = seL4_TCB_SetSchedParams(
+        BASE_TCB_CAP + pd, 
+        BASE_TCB_CAP + sel4cp_current_pd_id, 
+        mcp, 
+        priority,
+        BASE_SCHEDCONTEXT_POOL + alloc_state.schedcontext_idx - 1,
+        FAULT_EP_CAP_IDX
+    );
     if (err != seL4_NoError) {
         sel4cp_dbg_puts("sel4cp_internal_set_priority: error setting priority\n");
         sel4cp_internal_crash(err);
@@ -591,16 +598,19 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
         switch (cap_type_id) {
             case SCHEDULING_ID: {
                 uint8_t priority = *cap_reader++;
+                uint8_t mcp = *cap_reader++;
                 uint64_t budget = *((uint64_t *)cap_reader);
                 cap_reader += 8;
                 uint64_t period = *((uint64_t *)cap_reader);
                 cap_reader += 8;
                 
-                sel4cp_internal_set_priority(pd, priority);
+                sel4cp_internal_set_priority(pd, priority, mcp);
                 sel4cp_internal_set_sched_flags(pd, budget, period);
                 
                 sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set scheduling parameters, priority = ");
                 sel4cp_dbg_puthex64(priority);
+                sel4cp_dbg_puts(" , mcp = ");
+                sel4cp_dbg_puthex64(mcp);
                 sel4cp_dbg_puts(" , budget = ");
                 sel4cp_dbg_puthex64(budget);
                 sel4cp_dbg_puts(" , period = ");
@@ -651,8 +661,7 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                     sel4cp_dbg_puthex64(page_cap);
                     sel4cp_dbg_puts("\n");
                     
-                    // Ensure that all required higher-level paging structures are mapped before
-                    // mapping this page.
+                    // Ensure that all required higher-level paging structures are mapped before mapping this page.
                     if (sel4cp_internal_set_up_required_paging_structures(page_vaddr, BASE_VSPACE_CAP + pd)) {
                         return -1;
                     }
@@ -1211,27 +1220,8 @@ sel4cp_pd_create(sel4cp_pd pd)
         return -1;
     }
     
-    // Bind the TCB to the SchedContext.
-    err = seL4_SchedContext_Bind(
-        schedcontext_cap,
-        tcb_cap
-    );
-    if (err != seL4_NoError) {
-        return -1;
-    }
     
     return 0;
-
-    // TODO: Ensure that the capabilities to the new PD, required for loading an ELF, are made available in the current PD.
-    //       More generally, the semantics could be changed back to a flat hierarchy
-    //       where a parent never has control over its child. This would most likely simplify the CSpace.
-    //       Furthermore, the parent and child can always exchange any needed shared capabilities afterwards,
-    //       providing a non-restrictive default with a minimum number of capabilities in each PD.
-    //       Issue: How to handle the creation of channels which requires unbadged notification capabilities?
-    //       Possible solution: A PD can be marked as the "owner" of another PD.
-    // TODO: Delete the capabilities for the allocated objects in the current PD.
-    // TODO: Use seL4_TCB_SetSchedParams to set the MCP and the priority when loading an ELF.
-    // TODO: Add API/SDK support for creating a new PD and loading an ELF file simultaneously.
 }
 
 

@@ -56,9 +56,10 @@ def get_target_protection_domain(system_description: SystemDescription) -> Prote
 
 def get_scheduling_access_right(target_pd: ProtectionDomain) -> SchedulingAccessRight:
     priority = get_int_in_range("priority", 0, target_pd.priority, target_pd.priority)
+    mcp = get_int_in_range("mcp", 0, 255, priority)
     budget = get_int_in_range("budget", 0, (1 << 64) - 1, target_pd.budget)
     period = get_int_in_range("period", budget, (1 << 64) - 1, budget)
-    return SchedulingAccessRight(priority, budget, period)
+    return SchedulingAccessRight(priority, mcp, budget, period)
     
 
 def get_channel_access_right(protection_domains: list[ProtectionDomain]) -> ChannelAccessRight:
