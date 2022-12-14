@@ -22,7 +22,6 @@
 #define P_FLAGS_WRITABLE 2 // Bit indicating that a segment should be writable.
 #define P_FLAGS_READABLE 4 // Bit indicating that a segment should be readable.
 #define SHT_SYMTAB 2 // the identifier for a symbol table section.
-#define SHT_STRTAB 3 // the identifier for a string table section.
 
 
 // Constants related to the protection model.
@@ -140,7 +139,7 @@ typedef struct {
     uint64_t page_directory_idx;
     uint64_t page_table_idx;
     uint64_t page_idx;
-    bool loader_temp_page_allocated;
+    uint8_t *temp_page_vaddr;
 } allocation_state;
 
 static allocation_state alloc_state = { 
@@ -153,7 +152,7 @@ static allocation_state alloc_state = {
     .page_directory_idx = 0,
     .page_table_idx = 0,
     .page_idx = 0,
-    .loader_temp_page_allocated = false
+    .temp_page_vaddr = NULL
 };
 
 /* User-provided functions */
@@ -165,7 +164,7 @@ void fault(sel4cp_channel ch, sel4cp_msginfo msginfo);
 // The following variables are set by the build tool.
 extern char sel4cp_name[16];
 extern sel4cp_pd sel4cp_current_pd_id;
-extern uint8_t *sel4cp_internal_loader_temp_page_vaddr;
+
 
 
 // ========== PRINTING UTILITIES ==========
@@ -383,6 +382,68 @@ sel4cp_internal_parse_vm_attributes(uint8_t memory_flags, bool cached)
 }
 
 /**
+ *  Returns true if the given strings are equal.
+ *  Precondition: The two strings are both 0-terminated.
+ */
+static bool
+sel4cp_internal_are_equal(char *a, char *b) {
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+    while (*a != '\0' && *b != '\0') {
+        if (*a != *b) {
+            return false;
+        }
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+/**
+ *  Returns the virtual address of the IPC buffer for the ELF file
+ *  pointed to by the given src.
+ */
+static uint8_t *
+sel4cp_internal_get_ipc_buffer_vaddr(uint8_t *src) 
+{
+    elf_header *elf_hdr = (elf_header *)src;
+    
+    // Find the symbol table.
+    elf_section_header *symbol_table_hdr = NULL;
+    for (uint64_t i = 0; i < elf_hdr->e_shnum; i++) {
+        elf_section_header *section_hdr = (elf_section_header *)(src + elf_hdr->e_shoff + (i * elf_hdr->e_shentsize));
+        
+        if (section_hdr->sh_type == SHT_SYMTAB) {
+            symbol_table_hdr = section_hdr;
+            break;
+        }
+    }
+    if (symbol_table_hdr == NULL) {
+        sel4cp_dbg_puts("sel4cp_internal_get_ipc_buffer_vaddr: failed to find the symbol table\n");
+        return NULL;
+    }
+    
+    // Get the associated string table.
+    elf_section_header *string_table_hdr = (elf_section_header *)(src + elf_hdr->e_shoff + (symbol_table_hdr->sh_link * elf_hdr->e_shentsize));
+    
+    // Find the __sel4_ipc_buffer_obj symbol.
+    uint8_t *ipc_buffer_vaddr = NULL; 
+    elf_symbol_table_entry *symbol_table_entry = (elf_symbol_table_entry *)(src + symbol_table_hdr->sh_offset);
+    uint8_t *symbol_table_end = src + symbol_table_hdr->sh_offset + symbol_table_hdr->sh_size; 
+    while (((uint8_t *)symbol_table_entry) < symbol_table_end) { 
+        uint8_t *symbol_name = src + string_table_hdr->sh_offset + symbol_table_entry->st_name;   
+        if (sel4cp_internal_are_equal("__sel4_ipc_buffer_obj", (char *)symbol_name)) {
+            ipc_buffer_vaddr = (uint8_t *)symbol_table_entry->st_value;
+            break;
+        }
+        symbol_table_entry++;
+    }
+    
+    return ipc_buffer_vaddr;
+}
+
+/**
  *  Ensures that all higher-level paging structures in the ARM AArch64 four-level
  *  page-table structure required to map a page at the given virtual address in the given
  *  PD VSpace are mapped.
@@ -523,18 +584,23 @@ sel4cp_internal_allocate_page(uint64_t vaddr, uint64_t pd_vspace_cap, uint32_t p
  *  Nothing is done to clean up in this case.
  */
 static uint8_t *
-sel4cp_internal_allocate_page_with_write_handle(uint64_t vaddr, uint64_t pd_vspace_cap, uint32_t p_flags) 
+sel4cp_internal_allocate_page_with_write_handle(uint8_t *src, uint64_t vaddr, uint64_t pd_vspace_cap, uint32_t p_flags) 
 {
     uint64_t allocated_page_idx = sel4cp_internal_allocate_page(vaddr, pd_vspace_cap, p_flags);
     if (allocated_page_idx == 0) {
         return NULL;
     }
     
-    if (!alloc_state.loader_temp_page_allocated) {
-        if (sel4cp_internal_set_up_required_paging_structures((uint64_t)sel4cp_internal_loader_temp_page_vaddr, BASE_VSPACE_CAP + sel4cp_current_pd_id)) {
+    if (alloc_state.temp_page_vaddr == NULL) {
+        uint8_t *ipc_buffer_vaddr = sel4cp_internal_get_ipc_buffer_vaddr(src);
+        if (ipc_buffer_vaddr == NULL) {
             return NULL;
         }
-        alloc_state.loader_temp_page_allocated = true;
+        // The IPC buffer is the last page of the ELF, so we use the page after that for the temp loader page.
+        alloc_state.temp_page_vaddr = ipc_buffer_vaddr + 0x1000; 
+        if (sel4cp_internal_set_up_required_paging_structures((uint64_t)alloc_state.temp_page_vaddr, BASE_VSPACE_CAP + sel4cp_current_pd_id)) {
+            return NULL;
+        }
     }
     
     // Ensure that the capability slot for the page capability mapped into the current PD's VSpace is empty.
@@ -561,7 +627,7 @@ sel4cp_internal_allocate_page_with_write_handle(uint64_t vaddr, uint64_t pd_vspa
     err = seL4_ARM_Page_Map(
         TEMP_CAP,
         BASE_VSPACE_CAP + sel4cp_current_pd_id,
-        (uint64_t)sel4cp_internal_loader_temp_page_vaddr,
+        (uint64_t)alloc_state.temp_page_vaddr,
         seL4_ReadWrite,
         SEL4_ARM_DEFAULT_VMATTRIBUTES
     );
@@ -572,7 +638,7 @@ sel4cp_internal_allocate_page_with_write_handle(uint64_t vaddr, uint64_t pd_vspa
         return NULL;
     }
 
-    return sel4cp_internal_loader_temp_page_vaddr + ((uint64_t)(vaddr % 0x1000));
+    return alloc_state.temp_page_vaddr + ((uint64_t)(vaddr % 0x1000));
 }
 
 /**
@@ -718,60 +784,10 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
     return 0;
 }
 
-/**
- *  Returns true if the given strings are equal.
- *  Precondition: The two strings are both 0-terminated.
- */
-static bool
-sel4cp_internal_are_equal(char *a, char *b) {
-    if (a == NULL || b == NULL) {
-        return false;
-    }
-    while (*a != '\0' && *b != '\0') {
-        if (*a != *b) {
-            return false;
-        }
-        a++;
-        b++;
-    }
-    return *a == '\0' && *b == '\0';
-}
-
 static int
 sel4cp_internal_set_up_ipc_buffer(uint8_t *src, sel4cp_pd pd)
 {
-    elf_header *elf_hdr = (elf_header *)src;
-    
-    // Find the symbol table.
-    elf_section_header *symbol_table_hdr = NULL;
-    for (uint64_t i = 0; i < elf_hdr->e_shnum; i++) {
-        elf_section_header *section_hdr = (elf_section_header *)(src + elf_hdr->e_shoff + (i * elf_hdr->e_shentsize));
-        
-        if (section_hdr->sh_type == SHT_SYMTAB) {
-            symbol_table_hdr = section_hdr;
-            break;
-        }
-    }
-    if (symbol_table_hdr == NULL) {
-        sel4cp_dbg_puts("sel4cp_internal_set_up_ipc_buffer: failed to find the symbol table\n");
-        return -1;
-    }
-    
-    // Get the associated string table.
-    elf_section_header *string_table_hdr = (elf_section_header *)(src + elf_hdr->e_shoff + (symbol_table_hdr->sh_link * elf_hdr->e_shentsize));
-    
-    // Find the __sel4_ipc_buffer_obj symbol.
-    uint8_t *ipc_buffer_vaddr = NULL; 
-    elf_symbol_table_entry *symbol_table_entry = (elf_symbol_table_entry *)(src + symbol_table_hdr->sh_offset);
-    uint8_t *symbol_table_end = src + symbol_table_hdr->sh_offset + symbol_table_hdr->sh_size; 
-    while (((uint8_t *)symbol_table_entry) < symbol_table_end) { 
-        uint8_t *symbol_name = src + string_table_hdr->sh_offset + symbol_table_entry->st_name;   
-        if (sel4cp_internal_are_equal("__sel4_ipc_buffer_obj", (char *)symbol_name)) {
-            ipc_buffer_vaddr = (uint8_t *)symbol_table_entry->st_value;
-            break;
-        }
-        symbol_table_entry++;
-    }
+    uint8_t *ipc_buffer_vaddr = sel4cp_internal_get_ipc_buffer_vaddr(src);
     if (ipc_buffer_vaddr == NULL) {
         sel4cp_dbg_puts("sel4cp_internal_set_up_ipc_buffer: failed to find the __sel4_ipc_buffer_obj symbol\n");
         return -1;
@@ -903,7 +919,7 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
         if (prog_hdr->p_type != PT_LOAD)
             continue; // the segment should not be loaded.
         
-        uint8_t *dst_write = sel4cp_internal_allocate_page_with_write_handle(prog_hdr->p_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
+        uint8_t *dst_write = sel4cp_internal_allocate_page_with_write_handle(src, prog_hdr->p_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
         if (dst_write == NULL) {
             sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
             return -1;
@@ -919,7 +935,7 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
             current_vaddr++;
             if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
                 // Allocate a new page.
-                dst_write = sel4cp_internal_allocate_page_with_write_handle(current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
+                dst_write = sel4cp_internal_allocate_page_with_write_handle(src, current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
                 if (dst_write == NULL) {
                     sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
                     return -1;
@@ -935,7 +951,7 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
                 current_vaddr++;
                 if (current_vaddr % 0x1000 == 0) { // assuming a page size of 0x1000 bytes (4 KiB).
                     // Allocate a new page.
-                    dst_write = sel4cp_internal_allocate_page_with_write_handle(current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
+                    dst_write = sel4cp_internal_allocate_page_with_write_handle(src, current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
                     if (dst_write == NULL) {
                         sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
                         return -1;
