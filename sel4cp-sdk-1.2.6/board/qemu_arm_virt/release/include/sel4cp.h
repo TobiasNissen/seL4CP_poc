@@ -401,11 +401,13 @@ sel4cp_internal_are_equal(char *a, char *b) {
 }
 
 /**
- *  Returns the virtual address of the IPC buffer for the ELF file
- *  pointed to by the given src.
+ *  Returns a pointer to the symbol table entry for the symbol with
+ *  the given name in the ELF file pointed to by the given src.
+ *  Returns NULL if no symbol with the given name was found or an error occurred.
+ *  Precondition: The target_symbol_name is 0-terminated.
  */
-static uint8_t *
-sel4cp_internal_get_ipc_buffer_vaddr(uint8_t *src) 
+static elf_symbol_table_entry *
+sel4cp_internal_get_symbol(uint8_t *src, char *target_symbol_name) 
 {
     elf_header *elf_hdr = (elf_header *)src;
     
@@ -420,27 +422,25 @@ sel4cp_internal_get_ipc_buffer_vaddr(uint8_t *src)
         }
     }
     if (symbol_table_hdr == NULL) {
-        sel4cp_dbg_puts("sel4cp_internal_get_ipc_buffer_vaddr: failed to find the symbol table\n");
+        sel4cp_dbg_puts("sel4cp_internal_get_symbol: failed to find the symbol table\n");
         return NULL;
     }
     
     // Get the associated string table.
     elf_section_header *string_table_hdr = (elf_section_header *)(src + elf_hdr->e_shoff + (symbol_table_hdr->sh_link * elf_hdr->e_shentsize));
     
-    // Find the __sel4_ipc_buffer_obj symbol.
-    uint8_t *ipc_buffer_vaddr = NULL; 
+    // Find the target symbol.
     elf_symbol_table_entry *symbol_table_entry = (elf_symbol_table_entry *)(src + symbol_table_hdr->sh_offset);
     uint8_t *symbol_table_end = src + symbol_table_hdr->sh_offset + symbol_table_hdr->sh_size; 
     while (((uint8_t *)symbol_table_entry) < symbol_table_end) { 
-        uint8_t *symbol_name = src + string_table_hdr->sh_offset + symbol_table_entry->st_name;   
-        if (sel4cp_internal_are_equal("__sel4_ipc_buffer_obj", (char *)symbol_name)) {
-            ipc_buffer_vaddr = (uint8_t *)symbol_table_entry->st_value;
-            break;
+        char *symbol_name = (char *)(src + string_table_hdr->sh_offset + symbol_table_entry->st_name);   
+        if (sel4cp_internal_are_equal(target_symbol_name, symbol_name)) {
+            return symbol_table_entry;
         }
         symbol_table_entry++;
     }
     
-    return ipc_buffer_vaddr;
+    return NULL;
 }
 
 /**
@@ -592,13 +592,15 @@ sel4cp_internal_allocate_page_with_write_handle(uint8_t *src, uint64_t vaddr, ui
     }
     
     if (alloc_state.temp_page_vaddr == NULL) {
-        uint8_t *ipc_buffer_vaddr = sel4cp_internal_get_ipc_buffer_vaddr(src);
-        if (ipc_buffer_vaddr == NULL) {
+        elf_symbol_table_entry *ipc_buffer_symbol = sel4cp_internal_get_symbol(src, "__sel4_ipc_buffer_obj");
+        if (ipc_buffer_symbol == NULL) {
+            sel4cp_dbg_puts("sel4cp_internal_allocate_page_with_write_handle: failed to find the IPC buffer symbol\n");
             return NULL;
         }
         // The IPC buffer is the last page of the ELF, so we use the page after that for the temp loader page.
-        alloc_state.temp_page_vaddr = ipc_buffer_vaddr + 0x1000; 
+        alloc_state.temp_page_vaddr = ((uint8_t *)ipc_buffer_symbol->st_value) + 0x1000; 
         if (sel4cp_internal_set_up_required_paging_structures((uint64_t)alloc_state.temp_page_vaddr, BASE_VSPACE_CAP + sel4cp_current_pd_id)) {
+            sel4cp_dbg_puts("sel4cp_internal_allocate_page_with_write_handle: failed to allocate the IPC buffer\n");
             return NULL;
         }
     }
@@ -787,15 +789,16 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
 static int
 sel4cp_internal_set_up_ipc_buffer(uint8_t *src, sel4cp_pd pd)
 {
-    uint8_t *ipc_buffer_vaddr = sel4cp_internal_get_ipc_buffer_vaddr(src);
-    if (ipc_buffer_vaddr == NULL) {
+    elf_symbol_table_entry *ipc_buffer_symbol = sel4cp_internal_get_symbol(src, "__sel4_ipc_buffer_obj");
+    if (ipc_buffer_symbol == NULL) {
         sel4cp_dbg_puts("sel4cp_internal_set_up_ipc_buffer: failed to find the __sel4_ipc_buffer_obj symbol\n");
         return -1;
     }
+    uint64_t ipc_buffer_vaddr = ipc_buffer_symbol->st_value;
     
     // Allocate the IPC buffer.
     uint64_t ipc_buffer_cap_idx = sel4cp_internal_allocate_page(
-        (uint64_t) ipc_buffer_vaddr, 
+        ipc_buffer_vaddr, 
         BASE_VSPACE_CAP + pd, 
         P_FLAGS_WRITABLE | P_FLAGS_READABLE
     );
@@ -807,7 +810,7 @@ sel4cp_internal_set_up_ipc_buffer(uint8_t *src, sel4cp_pd pd)
     // Set the IPC buffer for the new PD.
     seL4_Error err = seL4_TCB_SetIPCBuffer(
         BASE_TCB_CAP + pd,
-        (uint64_t) ipc_buffer_vaddr,
+        ipc_buffer_vaddr,
         ipc_buffer_cap_idx
     );
     if (err != seL4_NoError) {
@@ -815,6 +818,29 @@ sel4cp_internal_set_up_ipc_buffer(uint8_t *src, sel4cp_pd pd)
         return -1;
     }
     
+    return 0;
+}
+
+static int 
+sel4cp_internal_set_pd_id(uint8_t *src, sel4cp_pd pd) 
+{
+    elf_symbol_table_entry *pd_id_symbol = sel4cp_internal_get_symbol(src, "sel4cp_current_pd_id");
+    if (pd_id_symbol == NULL) {
+        sel4cp_dbg_puts("sel4cp_internal_set_pd_id: failed to find the symbol 'sel4cp_current_pd_id' in the given PD\n");
+        return -1;
+    }
+    
+    sel4cp_dbg_puts("sel4cp_internal_set_pd_id: got the symbol table entry, src = ");
+    sel4cp_dbg_puthex64((uint64_t)src);
+    sel4cp_dbg_puts(", symbol = ");
+    sel4cp_dbg_puthex64((uint64_t)pd_id_symbol);
+    sel4cp_dbg_puts("\n");
+   
+    pd_id_symbol->st_value = (uint64_t) pd;
+    
+    sel4cp_dbg_puts("test: ");
+    sel4cp_dbg_puthex64(sel4cp_internal_get_symbol(src, "sel4cp_current_pd_id")->st_value);
+    sel4cp_dbg_puts("\n");
     return 0;
 }
 
@@ -914,6 +940,11 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
     // Set the entry point of the given program.
     *entry_point = elf_hdr->e_entry;
     
+    if (sel4cp_internal_set_pd_id(src, pd)) {
+        sel4cp_dbg_puts("selcp_pd_load_elf: failed to set the PD id of the given PD\n");
+        return -1;
+    }
+    
     for (uint64_t i = 0; i < elf_hdr->e_phnum; i++) {
         elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
         if (prog_hdr->p_type != PT_LOAD)
@@ -921,7 +952,9 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
         
         uint8_t *dst_write = sel4cp_internal_allocate_page_with_write_handle(src, prog_hdr->p_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
         if (dst_write == NULL) {
-            sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
+            sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file, p_vaddr = ");
+            sel4cp_dbg_puthex64(prog_hdr->p_vaddr);
+            sel4cp_dbg_puts("\n");
             return -1;
         }
         
@@ -937,7 +970,9 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
                 // Allocate a new page.
                 dst_write = sel4cp_internal_allocate_page_with_write_handle(src, current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
                 if (dst_write == NULL) {
-                    sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
+                    sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file, vaddr = ");
+                    sel4cp_dbg_puthex64(current_vaddr);
+                    sel4cp_dbg_puts("\n");
                     return -1;
                 }
             }
@@ -953,7 +988,9 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
                     // Allocate a new page.
                     dst_write = sel4cp_internal_allocate_page_with_write_handle(src, current_vaddr, BASE_VSPACE_CAP + pd, prog_hdr->p_flags);
                     if (dst_write == NULL) {
-                        sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file\n");
+                        sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to allocate a page required to load the ELF file, vaddr = ");
+                        sel4cp_dbg_puthex64(current_vaddr);
+                        sel4cp_dbg_puts("\n");
                         return -1;
                     }
                 }
