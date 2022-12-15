@@ -18,7 +18,7 @@ LIBS := -lsel4cp -Tsel4cp.ld
 IMAGE_FILE = $(BUILD_DIR)/loader.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
-IMAGES = hello_world.elf root.elf pong.elf
+IMAGES = root.elf pong.elf child.elf hello_world.elf
 
 
 all: directories $(IMAGE_FILE)
@@ -28,9 +28,6 @@ directories:
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
-	
-$(BUILD_DIR)/root.elf: $(BUILD_DIR)/root.o
-	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@

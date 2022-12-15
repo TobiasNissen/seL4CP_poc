@@ -1,7 +1,7 @@
 // This is based off of the UART driver at:
 // https://github.com/seL4/util_libs/blob/master/libplatsupport/src/plat/qemu-arm-virt/serial.c
 
-extern uintptr_t uart_base_vaddr;
+extern uint8_t *uart_base_vaddr;
 
 #define RHR_MASK 0b111111111
 #define UARTDR 0x000

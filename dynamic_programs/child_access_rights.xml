@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<capabilities loader_pd="root_domain">
+    <scheduling priority="1" mcp="1" budget="1000" period="1000" />
+    
+    <channel target_pd="pong" target_pd_channel_id="1" own_pd_channel_id="1" />
+    
+    <memory_region name="test_region" vaddr="0x5000000" perms="r" cached="true" />
+    <memory_region name="UART" vaddr="0x2000000" perms="rw" cached="false" />
+    
+    <irq irq="33" channel_id="4"/>
+</capabilities>

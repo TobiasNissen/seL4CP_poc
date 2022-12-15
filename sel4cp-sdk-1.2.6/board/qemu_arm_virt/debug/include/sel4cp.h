@@ -42,7 +42,7 @@
 #define POOL_NUM_PAGE_UPPER_DIRECTORIES (POOL_NUM_PD_TARGETS * 2)
 #define POOL_NUM_PAGE_DIRECTORIES (POOL_NUM_PD_TARGETS * 4)
 #define POOL_NUM_PAGE_TABLES (POOL_NUM_PD_TARGETS * 6)
-#define POOL_NUM_PAGES (POOL_NUM_PD_TARGETS * 20)
+#define POOL_NUM_PAGES (POOL_NUM_PD_TARGETS * 30)
 
 // Constants used for addressing specific capabilities in a PD.
 #define INPUT_CAP_IDX 1
@@ -1100,7 +1100,7 @@ sel4cp_pd_run_elf(uint8_t *src, sel4cp_pd pd)
  *  Returns -1 if an error occurs.
  */
 static int
-sel4cp_pd_create(sel4cp_pd pd, uint8_t *src) 
+sel4cp_pd_create(sel4cp_pd pd, uint8_t *src, bool transfer_pool_objects) 
 {
     // Allocate a CNode for the new PD.
     if (alloc_state.cnode_idx >= POOL_NUM_CNODES) {
@@ -1109,20 +1109,23 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src)
     uint64_t cnode_cap = BASE_CNODE_POOL + alloc_state.cnode_idx;
     alloc_state.cnode_idx++;
     
-    // Move capabilities for unused pool objects to the new PD.
-    if (sel4cp_internal_move_pool_caps(cnode_cap, BASE_TCB_POOL, &alloc_state.tcb_idx, POOL_NUM_TCBS, POOL_NUM_PD_TARGETS_CHILD) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_NOTIFICATION_POOL, &alloc_state.notification_idx, POOL_NUM_NOTIFICATIONS, POOL_NUM_PD_TARGETS_CHILD) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_CNODE_POOL, &alloc_state.cnode_idx, POOL_NUM_CNODES, POOL_NUM_PD_TARGETS_CHILD) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_SCHEDCONTEXT_POOL, &alloc_state.schedcontext_idx, POOL_NUM_SCHEDCONTEXTS, POOL_NUM_PD_TARGETS_CHILD) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_VSPACE_POOL, &alloc_state.vspace_idx, POOL_NUM_VSPACES, POOL_NUM_PD_TARGETS_CHILD) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_UPPER_DIRECTORY_POOL, &alloc_state.page_upper_directory_idx, POOL_NUM_PAGE_UPPER_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 2) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_DIRECTORY_POOL, &alloc_state.page_directory_idx, POOL_NUM_PAGE_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 4) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_TABLE_POOL, &alloc_state.page_table_idx, POOL_NUM_PAGE_TABLES, POOL_NUM_PD_TARGETS_CHILD * 6) ||
-        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_POOL, &alloc_state.page_idx, POOL_NUM_PAGES, POOL_NUM_PD_TARGETS_CHILD * 20)) 
-    {    
-        sel4cp_dbg_puts("sel4cp_pd_create: failed to move capabilities for unused pool objects to the new PD\n");
-        return -1;
+    // Move capabilities for unused pool objects to the new PD, if required.
+    if (transfer_pool_objects) {
+        if (sel4cp_internal_move_pool_caps(cnode_cap, BASE_TCB_POOL, &alloc_state.tcb_idx, POOL_NUM_TCBS, POOL_NUM_PD_TARGETS_CHILD) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_NOTIFICATION_POOL, &alloc_state.notification_idx, POOL_NUM_NOTIFICATIONS, POOL_NUM_PD_TARGETS_CHILD) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_CNODE_POOL, &alloc_state.cnode_idx, POOL_NUM_CNODES, POOL_NUM_PD_TARGETS_CHILD) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_SCHEDCONTEXT_POOL, &alloc_state.schedcontext_idx, POOL_NUM_SCHEDCONTEXTS, POOL_NUM_PD_TARGETS_CHILD) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_VSPACE_POOL, &alloc_state.vspace_idx, POOL_NUM_VSPACES, POOL_NUM_PD_TARGETS_CHILD) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_UPPER_DIRECTORY_POOL, &alloc_state.page_upper_directory_idx, POOL_NUM_PAGE_UPPER_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 2) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_DIRECTORY_POOL, &alloc_state.page_directory_idx, POOL_NUM_PAGE_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 4) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_TABLE_POOL, &alloc_state.page_table_idx, POOL_NUM_PAGE_TABLES, POOL_NUM_PD_TARGETS_CHILD * 6) ||
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_POOL, &alloc_state.page_idx, POOL_NUM_PAGES, POOL_NUM_PD_TARGETS_CHILD * 20)) 
+        {    
+            sel4cp_dbg_puts("sel4cp_pd_create: failed to move capabilities for unused pool objects to the new PD\n");
+            return -1;
+        }
     }
+    
 
     // Allocate a TCB for the new PD.
     if (alloc_state.tcb_idx >= POOL_NUM_TCBS) {
