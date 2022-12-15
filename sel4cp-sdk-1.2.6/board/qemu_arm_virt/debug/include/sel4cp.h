@@ -32,6 +32,7 @@
 
 // Constants related to the organization of the CSpace in a PD.
 #define PD_CAP_BITS 11
+#define POOL_NUM_PD_TARGETS_CHILD 2 // The target number of PDs to be able to load dynamically from a dynamically loaded PD.
 #define POOL_NUM_PD_TARGETS 5
 #define POOL_NUM_TCBS POOL_NUM_PD_TARGETS
 #define POOL_NUM_NOTIFICATIONS POOL_NUM_PD_TARGETS
@@ -882,6 +883,37 @@ sel4cp_internal_ensure_page_is_allocated(uint8_t *write_handle, uint8_t *src, ui
     return write_handle;
 }
 
+/**
+ *  Moves num_caps_to_copy capabilities from the given pool to the CSpace of the given pd.
+ *  
+ *  Returns 0 on success.
+ *  Otherwise, -1 is returned.
+ */
+static int
+sel4cp_internal_move_pool_caps(uint64_t target_cnode, uint64_t pool_base_cap_idx, uint64_t *alloc_state_idx, uint64_t pool_size, uint64_t num_caps_to_copy) 
+{
+    for (uint64_t i = 0; i < num_caps_to_copy; i++) {
+        if (*alloc_state_idx >= pool_size) {
+            return -1;
+        }
+        
+        seL4_Error err = seL4_CNode_Move(
+            target_cnode,
+            pool_base_cap_idx + i,
+            PD_CAP_BITS,
+            BASE_CNODE_CAP + sel4cp_current_pd_id,
+            pool_base_cap_idx + *alloc_state_idx,
+            PD_CAP_BITS
+        );
+        if (err != seL4_NoError) {
+            return -1;
+        }
+        *alloc_state_idx += 1;
+    }
+    return 0;
+}
+
+
 // ========== END OF UTILITY FUNCTIONS ==========
 
 // ========== PUBLIC INTERFACE ==========
@@ -1070,6 +1102,28 @@ sel4cp_pd_run_elf(uint8_t *src, sel4cp_pd pd)
 static int
 sel4cp_pd_create(sel4cp_pd pd, uint8_t *src) 
 {
+    // Allocate a CNode for the new PD.
+    if (alloc_state.cnode_idx >= POOL_NUM_CNODES) {
+        return -1;
+    }
+    uint64_t cnode_cap = BASE_CNODE_POOL + alloc_state.cnode_idx;
+    alloc_state.cnode_idx++;
+    
+    // Move capabilities for unused pool objects to the new PD.
+    if (sel4cp_internal_move_pool_caps(cnode_cap, BASE_TCB_POOL, &alloc_state.tcb_idx, POOL_NUM_TCBS, POOL_NUM_PD_TARGETS_CHILD) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_NOTIFICATION_POOL, &alloc_state.notification_idx, POOL_NUM_NOTIFICATIONS, POOL_NUM_PD_TARGETS_CHILD) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_CNODE_POOL, &alloc_state.cnode_idx, POOL_NUM_CNODES, POOL_NUM_PD_TARGETS_CHILD) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_SCHEDCONTEXT_POOL, &alloc_state.schedcontext_idx, POOL_NUM_SCHEDCONTEXTS, POOL_NUM_PD_TARGETS_CHILD) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_VSPACE_POOL, &alloc_state.vspace_idx, POOL_NUM_VSPACES, POOL_NUM_PD_TARGETS_CHILD) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_UPPER_DIRECTORY_POOL, &alloc_state.page_upper_directory_idx, POOL_NUM_PAGE_UPPER_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 2) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_DIRECTORY_POOL, &alloc_state.page_directory_idx, POOL_NUM_PAGE_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 4) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_TABLE_POOL, &alloc_state.page_table_idx, POOL_NUM_PAGE_TABLES, POOL_NUM_PD_TARGETS_CHILD * 6) ||
+        sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_POOL, &alloc_state.page_idx, POOL_NUM_PAGES, POOL_NUM_PD_TARGETS_CHILD * 20)) 
+    {    
+        sel4cp_dbg_puts("sel4cp_pd_create: failed to move capabilities for unused pool objects to the new PD\n");
+        return -1;
+    }
+
     // Allocate a TCB for the new PD.
     if (alloc_state.tcb_idx >= POOL_NUM_TCBS) {
         return -1;
@@ -1083,13 +1137,6 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src)
     }
     uint64_t notification_cap = BASE_NOTIFICATION_POOL + alloc_state.notification_idx;
     alloc_state.notification_idx++;
-    
-    // Allocate a CNode for the new PD.
-    if (alloc_state.cnode_idx >= POOL_NUM_CNODES) {
-        return -1;
-    }
-    uint64_t cnode_cap = BASE_CNODE_POOL + alloc_state.cnode_idx;
-    alloc_state.cnode_idx++;
     
     // Allocate a SchedContext for the new PD.
     if (alloc_state.schedcontext_idx >= POOL_NUM_SCHEDCONTEXTS) {
@@ -1304,7 +1351,7 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src)
     if (err != seL4_NoError) {
         return -1;
     }
-    
+        
     if (src != NULL) {
         return sel4cp_pd_run_elf(src, pd);
     }

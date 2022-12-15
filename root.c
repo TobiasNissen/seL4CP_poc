@@ -4,9 +4,7 @@
 #include "uart.h"
 
 #define UART_IRQ_CHANNEL_ID 0
-
 #define CHILD_PD_ID 1
-
 #define ELF_BUFFER_SIZE 0x30000
 
 uint8_t elf_buffer[ELF_BUFFER_SIZE];
