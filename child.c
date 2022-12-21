@@ -8,17 +8,13 @@
 #define IRQ_CHANNEL_ID 4
 #define CHILD_PD_ID 5
 
-#define VADDR 0x5000000
 uint8_t *uart_base_vaddr = (uint8_t *)0x2000000;
 
 void
 init(void)
 {
-    uint8_t *memory = (uint8_t *)VADDR;
     sel4cp_dbg_puts("child: initialized!\n");
-    sel4cp_dbg_puts("child: reading value (expecting 0x2a): ");
-    sel4cp_dbg_puthex64(*memory);
-    sel4cp_dbg_puts("\nchild: sending ping!\n");
+    sel4cp_dbg_puts("child: sending ping!\n");
     sel4cp_notify(PING_CHANNEL_ID);
 }
 

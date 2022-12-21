@@ -658,6 +658,7 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
     cap_reader += 8;
     
     // Setup all capabilities.
+    uint64_t shared_page_idx = BASE_SHARED_MEMORY_REGION_PAGES;
     for (uint64_t i = 0; i < num_capabilities; i++) {
         uint8_t cap_type_id = *cap_reader++;
         switch (cap_type_id) {
@@ -715,7 +716,7 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                 seL4_CapRights_t rights = sel4cp_internal_parse_cap_rights(perms);
                 seL4_ARM_VMAttributes vm_attributes = sel4cp_internal_parse_vm_attributes(perms, cached); 
                 
-                // Map the page into the child PD's VSpace.
+                // Map the memory region into the child PD's VSpace.
                 uint64_t pd_vspace_cap = BASE_VSPACE_CAP + pd;
                 uint64_t num_pages = size / 0x1000; // Assumes that the size is a multiple of the page size 0x1000.
                 for (uint64_t j = 0; j < num_pages; j++) {
@@ -727,6 +728,7 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                         return -1;
                     }
                     
+                    // Map the page into the child PD's VSpace.
                     seL4_Error err = seL4_ARM_Page_Map(
                         page_cap, 
                         pd_vspace_cap, 
@@ -740,6 +742,20 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                         sel4cp_dbg_puts("\n");
                         return -1;
                     } 
+                    // Copy the page capability into the child PD's CSpace.
+                    err = seL4_CNode_Copy(
+                        BASE_CNODE_CAP + pd,
+                        shared_page_idx,
+                        PD_CAP_BITS,
+                        BASE_CNODE_CAP + sel4cp_current_pd_id,
+                        page_cap,
+                        PD_CAP_BITS,
+                        seL4_AllRights
+                    );
+                    if (err != seL4_NoError) {
+                        return -1;
+                    }
+                    shared_page_idx++;
                 }                
                 
                 sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set up memory region - id = ");
@@ -825,23 +841,6 @@ sel4cp_internal_get_pd_id_vaddr(uint8_t *src, sel4cp_pd pd)
     
     // The value of the pd_id_symbol is the virtual address in the new PD.
     return (uint8_t *)pd_id_symbol->st_value;
-    
-    /*
-    // Thus, we need to find the correct spot in the file image to write the new value.
-    elf_header *elf_hdr = (elf_header *)src;
-    for (uint64_t i = 0; i < elf_hdr->e_phnum; i++) {
-        elf_program_header *prog_hdr = (elf_program_header *)(src + elf_hdr->e_phoff + (i * elf_hdr->e_phentsize));
-        if (prog_hdr->p_vaddr <= target_vaddr && (prog_hdr->p_vaddr + prog_hdr->p_memsz) >= target_vaddr) {
-            uint8_t *target_vaddr = src + prog_hdr->p_offset + (target_vaddr - prog_hdr->p_vaddr);
-            sel4cp_dbg_puts("writing pd_id: ");
-            *(src + prog_hdr->p_offset + (target_vaddr - prog_hdr->p_vaddr)) = pd;
-            return 0;
-        }
-    }
-    
-    sel4cp_dbg_puts("sel4cp_internal_set_pd_id: faile to find the segment in the ELF file to write the new PD id to\n");
-    return -1;
-    */
 }
 
 /**
@@ -1119,7 +1118,7 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src, bool transfer_pool_objects)
             sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_UPPER_DIRECTORY_POOL, &alloc_state.page_upper_directory_idx, POOL_NUM_PAGE_UPPER_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 2) ||
             sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_DIRECTORY_POOL, &alloc_state.page_directory_idx, POOL_NUM_PAGE_DIRECTORIES, POOL_NUM_PD_TARGETS_CHILD * 4) ||
             sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_TABLE_POOL, &alloc_state.page_table_idx, POOL_NUM_PAGE_TABLES, POOL_NUM_PD_TARGETS_CHILD * 6) ||
-            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_POOL, &alloc_state.page_idx, POOL_NUM_PAGES, POOL_NUM_PD_TARGETS_CHILD * 20)) 
+            sel4cp_internal_move_pool_caps(cnode_cap, BASE_PAGE_POOL, &alloc_state.page_idx, POOL_NUM_PAGES, POOL_NUM_PD_TARGETS_CHILD * 30)) 
         {    
             sel4cp_dbg_puts("sel4cp_pd_create: failed to move capabilities for unused pool objects to the new PD\n");
             return -1;
