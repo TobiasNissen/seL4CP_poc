@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system>
+    <memory_region name="UART" size="0x1_000" phys_addr="0x9000000"/>
+    <memory_region name="test_region" size="0x3_000" page_size="0x1_000" />
+    
+    <channel>
+        <end pd="pong" id="1" />
+        <end pd="child" id="1" />
+    </channel>
+    
+    <protection_domain pd_id="0" name="root_domain" priority="253" mcp="253">
+    	<program_image path="root.elf" />
+    	
+        <protection_domain pd_id="1" name="child" priority="1" mcp="1" budget="1000" period="1000">
+            <program_image path="child.elf" />
+            
+        	<map mr="test_region" vaddr="0x5_000_000" perms="r" />
+            
+            <protection_domain_control />
+            
+            <!-- UART-related configuration -->
+            <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false"/>
+            <irq irq="33" id="4"/>
+        </protection_domain>
+    	
+    	
+    	<protection_domain pd_id="2" name="pong" priority="254">
+            <program_image path="pong.elf" />
+        </protection_domain>
+    	
+    	<map mr="test_region" vaddr="0x5_000_000" perms="rw" setvar_vaddr="test_region_vaddr" />
+        <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false"/>
+        
+    	<protection_domain_control />
+    </protection_domain>
+</system>

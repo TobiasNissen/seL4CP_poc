@@ -6,14 +6,16 @@
     <protection_domain pd_id="0" name="root_domain" priority="253" mcp="253">
     	<program_image path="root.elf" />
     	
+    	<protection_domain pd_id="2" name="pong" priority="254">
+            <program_image path="pong.elf" />
+        </protection_domain>
+        
     	<map mr="test_region" vaddr="0x5_000_000" perms="rw" setvar_vaddr="test_region_vaddr" />
+    	
+    	<protection_domain_control />
     	
     	<!-- UART-related configuration -->
         <map mr="UART" vaddr="0x2_000_000" perms="rw" cached="false" setvar_vaddr="uart_base_vaddr"/>
         <irq irq="33" id="0"/>
-        
-        <protection_domain pd_id="2" name="pong" priority="254">
-            <program_image path="pong.elf" />
-        </protection_domain>
     </protection_domain>
 </system>

@@ -16,7 +16,7 @@
 
 // ELF-related constants
 #define EI_NIDENT 16 // the total number of bytes in the e_ident field of an ELF header.
-#define EI_CAPABILITY_OFFSET_IDX 9 // the index into `e_ident` in the ELF header where the offset of the capability section is written.
+#define EI_ACCESS_RIGHT_TABLE_OFFSET_IDX 9 // the index into `e_ident` in the ELF header where the offset of the access right table is written.
 #define PT_LOAD 1 // the identifier for a loadable ELF segment.
 #define P_FLAGS_EXECUTABLE 1 // Bit indicating that a segment should be executable.
 #define P_FLAGS_WRITABLE 2 // Bit indicating that a segment should be writable.
@@ -29,6 +29,7 @@
 #define CHANNEL_ID 1
 #define MEMORY_REGION_ID 2
 #define IRQ_ID 3
+#define PROTECTION_DOMAIN_CONTROL_ID 4
 
 // Constants related to the organization of the CSpace in a PD.
 #define PD_CAP_BITS 11
@@ -264,7 +265,7 @@ sel4cp_internal_set_up_channel(sel4cp_pd pd_a, sel4cp_pd pd_b, uint8_t channel_i
         1 << channel_id_b
     );
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_internal_set_up_channel: failed set up channel capability for PD ");
+        sel4cp_dbg_puts("sel4cp_internal_set_up_channel: failed set up channel for PD ");
         sel4cp_dbg_puthex64(pd_a);
         sel4cp_dbg_puts("\n");
         sel4cp_internal_crash(err);
@@ -282,7 +283,7 @@ sel4cp_internal_set_up_channel(sel4cp_pd pd_a, sel4cp_pd pd_b, uint8_t channel_i
         1 << channel_id_a
     );
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_internal_set_up_channel: failed set up channel capability for PD ");
+        sel4cp_dbg_puts("sel4cp_internal_set_up_channel: failed set up channel for PD ");
         sel4cp_dbg_puthex64(pd_b);
         sel4cp_dbg_puts("\n");
         sel4cp_internal_crash(err);
@@ -641,76 +642,54 @@ sel4cp_internal_allocate_page_with_write_handle(uint8_t *src, uint64_t vaddr, ui
 }
 
 /**
- *  Sets up the capabilities for the given program in the given PD.
+ *  Sets up the access rights for the given program in the given PD.
  */
 static int 
-sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd) 
-{
-    sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: setting up capabilities!\n");
-    
-    // Get the offset of the capability section, 
+sel4cp_internal_set_up_access_rights(uint8_t *elf_file, sel4cp_pd pd) 
+{   
+    // Get the offset of the access right table, 
     // taking into account that the offset is only 7 bytes long.
-    uint64_t capability_offset = *((uint64_t *)(elf_file + EI_CAPABILITY_OFFSET_IDX - 1)) >> 8;
+    uint64_t access_right_table_offset = *((uint64_t *)(elf_file + EI_ACCESS_RIGHT_TABLE_OFFSET_IDX - 1)) >> 8;
     
-    uint8_t *cap_reader = elf_file + capability_offset;
+    uint8_t *access_right_reader = elf_file + access_right_table_offset;
     
-    uint64_t num_capabilities = *((uint64_t *) cap_reader);
-    cap_reader += 8;
+    uint64_t num_access_rights = *((uint64_t *) access_right_reader);
+    access_right_reader += 8;
     
-    // Setup all capabilities.
+    // Setup all access rights.
     uint64_t shared_page_idx = BASE_SHARED_MEMORY_REGION_PAGES;
-    for (uint64_t i = 0; i < num_capabilities; i++) {
-        uint8_t cap_type_id = *cap_reader++;
-        switch (cap_type_id) {
+    for (uint64_t i = 0; i < num_access_rights; i++) {
+        uint8_t access_right_type_id = *access_right_reader++;
+        switch (access_right_type_id) {
             case SCHEDULING_ID: {
-                uint8_t priority = *cap_reader++;
-                uint8_t mcp = *cap_reader++;
-                uint64_t budget = *((uint64_t *)cap_reader);
-                cap_reader += 8;
-                uint64_t period = *((uint64_t *)cap_reader);
-                cap_reader += 8;
+                uint8_t priority = *access_right_reader++;
+                uint8_t mcp = *access_right_reader++;
+                uint64_t budget = *((uint64_t *)access_right_reader);
+                access_right_reader += 8;
+                uint64_t period = *((uint64_t *)access_right_reader);
+                access_right_reader += 8;
                 
                 sel4cp_internal_set_priority(pd, priority, mcp);
                 sel4cp_internal_set_sched_flags(pd, budget, period);
-                
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set scheduling parameters, priority = ");
-                sel4cp_dbg_puthex64(priority);
-                sel4cp_dbg_puts(" , mcp = ");
-                sel4cp_dbg_puthex64(mcp);
-                sel4cp_dbg_puts(" , budget = ");
-                sel4cp_dbg_puthex64(budget);
-                sel4cp_dbg_puts(" , period = ");
-                sel4cp_dbg_puthex64(period);
-                sel4cp_dbg_puts("\n");
                 break;
             }
             case CHANNEL_ID: {
-                uint8_t target_pd = *cap_reader++;
-                uint8_t target_id = *cap_reader++;
-                uint8_t own_id = *cap_reader++;
+                uint8_t target_pd = *access_right_reader++;
+                uint8_t target_id = *access_right_reader++;
+                uint8_t own_id = *access_right_reader++;
                 
                 sel4cp_internal_set_up_channel(pd, target_pd, own_id, target_id);
-                
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set up channel - pd_a = ");
-                sel4cp_dbg_puthex64(pd);
-                sel4cp_dbg_puts(", pd_b = ");
-                sel4cp_dbg_puthex64(target_pd);
-                sel4cp_dbg_puts(", channel_id_a = ");
-                sel4cp_dbg_puthex64(own_id);
-                sel4cp_dbg_puts(", channel_id_b = ");
-                sel4cp_dbg_puthex64(target_id);
-                sel4cp_dbg_puts("\n");
                 break;
             }
             case MEMORY_REGION_ID: {
-                uint64_t id = *((uint64_t *) cap_reader);
-                cap_reader += 8;
-                uint64_t vaddr = *((uint64_t *) cap_reader);
-                cap_reader += 8;
-                uint64_t size = *((uint64_t *) cap_reader);
-                cap_reader += 8;
-                uint8_t perms = *cap_reader++;
-                uint8_t cached = *cap_reader++;
+                uint64_t id = *((uint64_t *) access_right_reader);
+                access_right_reader += 8;
+                uint64_t vaddr = *((uint64_t *) access_right_reader);
+                access_right_reader += 8;
+                uint64_t size = *((uint64_t *) access_right_reader);
+                access_right_reader += 8;
+                uint8_t perms = *access_right_reader++;
+                uint8_t cached = *access_right_reader++;
                 
                 // Parse the rights and VM attributes.
                 seL4_CapRights_t rights = sel4cp_internal_parse_cap_rights(perms);
@@ -737,7 +716,7 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                         vm_attributes
                     );
                     if (err != seL4_NoError) {
-                        sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: failed to map page for child\n");
+                        sel4cp_dbg_puts("sel4cp_internal_set_up_access_rights: failed to map page for child\n");
                         sel4cp_dbg_puthex64(err);
                         sel4cp_dbg_puts("\n");
                         return -1;
@@ -757,36 +736,22 @@ sel4cp_internal_set_up_capabilities(uint8_t *elf_file, sel4cp_pd pd)
                     }
                     shared_page_idx++;
                 }                
-                
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set up memory region - id = ");
-                sel4cp_dbg_puthex64(id);
-                sel4cp_dbg_puts(", vaddr = ");
-                sel4cp_dbg_puthex64(vaddr);
-                sel4cp_dbg_puts(", size = ");
-                sel4cp_dbg_puthex64(size);
-                sel4cp_dbg_puts(", perms = ");
-                sel4cp_dbg_puthex64(perms);
-                sel4cp_dbg_puts(", cached = ");
-                sel4cp_dbg_puthex64(cached);
-                sel4cp_dbg_puts("\n");
                 break;
             }
             case IRQ_ID: {
-                uint8_t parent_irq_channel_id = *cap_reader++;
-                uint8_t child_irq_channel_id = *cap_reader++;
+                uint8_t parent_irq_channel_id = *access_right_reader++;
+                uint8_t child_irq_channel_id = *access_right_reader++;
                 
                 sel4cp_internal_set_up_irq(pd, parent_irq_channel_id, child_irq_channel_id);
-                
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: set up irq - parent_irq_channel_id = ");
-                sel4cp_dbg_puthex64(parent_irq_channel_id);
-                sel4cp_dbg_puts(", child_irq_channel_id = ");
-                sel4cp_dbg_puthex64(child_irq_channel_id);
-                sel4cp_dbg_puts("\n");
+                break;
+            }
+            case PROTECTION_DOMAIN_CONTROL_ID: {
+                // This access right has already been handled, so it can just be skipped here.
                 break;
             }
             default:
-                sel4cp_dbg_puts("sel4cp_internal_set_up_capabilities: invalid capability type id: ");
-                sel4cp_dbg_puthex64(cap_type_id);
+                sel4cp_dbg_puts("sel4cp_internal_set_up_access_rights: invalid access right type id: ");
+                sel4cp_dbg_puthex64(access_right_type_id);
                 sel4cp_dbg_puts("\n");
                 return -1;
         }
@@ -912,25 +877,50 @@ sel4cp_internal_move_pool_caps(uint64_t target_cnode, uint64_t pool_base_cap_idx
     return 0;
 }
 
-
-// ========== END OF UTILITY FUNCTIONS ==========
-
-// ========== PUBLIC INTERFACE ==========
-
-static inline void
-sel4cp_notify(sel4cp_channel ch)
-{
-    seL4_Signal(BASE_OUTPUT_NOTIFICATION_CAP + ch);
-}
-
-static inline void
-sel4cp_irq_ack(sel4cp_channel ch)
-{
-    seL4_IRQHandler_Ack(BASE_IRQ_CAP + ch);
+/**
+ *  Returns true if and only if the given ELF program contains a protection_domain_control access right.
+ */
+static bool sel4cp_internal_has_protection_domain_control_access_right(uint8_t *elf_file) {    
+    // Get the offset of the access right table, 
+    // taking into account that the offset is only 7 bytes long.
+    uint64_t access_right_table_offset = *((uint64_t *)(elf_file + EI_ACCESS_RIGHT_TABLE_OFFSET_IDX - 1)) >> 8;
+    
+    uint8_t *access_right_reader = elf_file + access_right_table_offset;
+    
+    uint64_t num_access_rights = *((uint64_t *) access_right_reader);
+    access_right_reader += 8;
+    
+    // Look for the protection_domain_control access right.
+    for (uint64_t i = 0; i < num_access_rights; i++) {
+        uint8_t access_right_type_id = *access_right_reader++;
+        switch (access_right_type_id) {
+            case SCHEDULING_ID:
+                access_right_reader += 18;
+                break;
+            case CHANNEL_ID:
+                access_right_reader += 3;
+                break;
+            case MEMORY_REGION_ID:
+                access_right_reader += 26;
+                break;
+            case IRQ_ID:
+                access_right_reader += 2;
+                break;
+            case PROTECTION_DOMAIN_CONTROL_ID:
+                return true;
+            default:
+                sel4cp_dbg_puts("sel4cp_internal_has_protection_domain_control_access_right: invalid access right type id: ");
+                sel4cp_dbg_puthex64(access_right_type_id);
+                sel4cp_dbg_puts("\n");
+                return false;
+        }
+    }
+    
+    return false;
 }
 
 static void
-sel4cp_pd_restart(sel4cp_pd pd, uintptr_t entry_point)
+sel4cp_internal_pd_restart(sel4cp_pd pd, uintptr_t entry_point)
 {
     seL4_Error err;
     seL4_UserContext ctxt = {0};
@@ -944,70 +934,24 @@ sel4cp_pd_restart(sel4cp_pd pd, uintptr_t entry_point)
     );
 
     if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_pd_restart: error writing registers\n");
+        sel4cp_dbg_puts("sel4cp_internal_pd_restart: error writing registers\n");
         sel4cp_internal_crash(err);
     }
 }
 
-static void
-sel4cp_pd_stop(sel4cp_pd pd)
-{
-    seL4_Error err;
-    err = seL4_TCB_Suspend(BASE_TCB_CAP + pd);
-    if (err != seL4_NoError) {
-        sel4cp_dbg_puts("sel4cp_pd_stop: error writing registers\n");
-        sel4cp_internal_crash(err);
-    }
-}
-
-static inline sel4cp_msginfo
-sel4cp_ppcall(sel4cp_channel ch, sel4cp_msginfo msginfo)
-{
-    return seL4_Call(BASE_OUTPUT_ENDPOINT_CAP + ch, msginfo);
-}
-
-static inline sel4cp_msginfo
-sel4cp_msginfo_new(uint64_t label, uint16_t count)
-{
-    return seL4_MessageInfo_new(label, 0, 0, count);
-}
-
-static inline uint64_t
-sel4cp_msginfo_get_label(sel4cp_msginfo msginfo)
-{
-    return seL4_MessageInfo_get_label(msginfo);
-}
-
-static void
-sel4cp_mr_set(uint8_t mr, uint64_t value)
-{
-    seL4_SetMR(mr, value);
-}
-
-static uint64_t
-sel4cp_mr_get(uint8_t mr)
-{
-    return seL4_GetMR(mr);
-}
 
 /**
  *  Loads the loadable segments of the ELF file at the given src into the given PD.
- *  Sets up the PD according to the capabilities included in the given ELF file.
+ *  Sets up the PD according to the access rights included in the given ELF file.
+ *  Starts the PD.
  *  
- *  NB: The program is NOT started. Use sel4cp_pd_restart to actually start the program.
- *  
- *  Returns 0 on success. In this case, the given entry_point points to the entry
- *  point of the loaded program.
- *  
+ *  Returns 0 on success.
  *  Returns -1 if an error occurs.
  */
 static int 
-sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point) 
+sel4cp_internal_pd_load_elf(uint8_t *src, sel4cp_pd pd) 
 {
     elf_header *elf_hdr = (elf_header *)src;
-    
-    // Set the entry point of the given program.
-    *entry_point = elf_hdr->e_entry;
     
     uint8_t *pd_id_vaddr = sel4cp_internal_get_pd_id_vaddr(src, pd);
     if (pd_id_vaddr == NULL) {
@@ -1060,47 +1004,94 @@ sel4cp_pd_load_elf(uint8_t *src, sel4cp_pd pd, uint64_t *entry_point)
     }
     
     if (sel4cp_internal_set_up_ipc_buffer(src, pd)) {
-        sel4cp_dbg_puts("sel4cp_pd_load_elf: failed to set up the IPC buffer\n");
+        sel4cp_dbg_puts("sel4cp_internal_pd_load_elf: failed to set up the IPC buffer\n");
         return -1;
     }
     
-    return sel4cp_internal_set_up_capabilities(src, pd);
-}
-
-/**
- *  Loads and runs the given program in the given PD.
- *  Precondition: The given src is assumed to point to an extended ELF file with capabilities.   
- *
- *  Returns 0 on success.
- *  Returns -1 if an error occurs.
- */
-static int 
-sel4cp_pd_run_elf(uint8_t *src, sel4cp_pd pd) 
-{
-    uint64_t entry_point;
-    int result = sel4cp_pd_load_elf(src, pd, &entry_point);
-    if (result)
-        return result;
+    if (sel4cp_internal_set_up_access_rights(src, pd)) {
+        sel4cp_dbg_puts("sel4cp_internal_pd_load_elf: failed to set up access rights\n");
+        return -1;
+    }
     
-    sel4cp_pd_restart(pd, entry_point);
-    
+    // Start the program at the specified entry point.
+    sel4cp_internal_pd_restart(pd, elf_hdr->e_entry);
     return 0;
 }
 
+// ========== END OF UTILITY FUNCTIONS ==========
+
+// ========== PUBLIC INTERFACE ==========
+
+static inline void
+sel4cp_notify(sel4cp_channel ch)
+{
+    seL4_Signal(BASE_OUTPUT_NOTIFICATION_CAP + ch);
+}
+
+static inline void
+sel4cp_irq_ack(sel4cp_channel ch)
+{
+    seL4_IRQHandler_Ack(BASE_IRQ_CAP + ch);
+}
+
+static void
+sel4cp_pd_stop(sel4cp_pd pd)
+{
+    seL4_Error err;
+    err = seL4_TCB_Suspend(BASE_TCB_CAP + pd);
+    if (err != seL4_NoError) {
+        sel4cp_dbg_puts("sel4cp_pd_stop: error writing registers\n");
+        sel4cp_internal_crash(err);
+    }
+}
+
+static inline sel4cp_msginfo
+sel4cp_ppcall(sel4cp_channel ch, sel4cp_msginfo msginfo)
+{
+    return seL4_Call(BASE_OUTPUT_ENDPOINT_CAP + ch, msginfo);
+}
+
+static inline sel4cp_msginfo
+sel4cp_msginfo_new(uint64_t label, uint16_t count)
+{
+    return seL4_MessageInfo_new(label, 0, 0, count);
+}
+
+static inline uint64_t
+sel4cp_msginfo_get_label(sel4cp_msginfo msginfo)
+{
+    return seL4_MessageInfo_get_label(msginfo);
+}
+
+static void
+sel4cp_mr_set(uint8_t mr, uint64_t value)
+{
+    seL4_SetMR(mr, value);
+}
+
+static uint64_t
+sel4cp_mr_get(uint8_t mr)
+{
+    return seL4_GetMR(mr);
+}
 
 /**
- *  Creates a new PD with the given id.
- *  If src is not NULL, the ELF file pointed to by this pointer
- *  is loaded and the PD is started.
- *  Otherwise, no program is loaded for the PD, and the PD is not started.
+ *  Creates a new PD with the given id and loads the statically linked
+    ELF file pointed to by src in this new PD.
  *  Precondition: No PD with the given id already exists in the system.
+ *  Precondition: src != NULL.
  *
  *  Returns 0 on success.
  *  Returns -1 if an error occurs.
  */
 static int
-sel4cp_pd_create(sel4cp_pd pd, uint8_t *src, bool transfer_pool_objects) 
+sel4cp_pd_create(sel4cp_pd pd, uint8_t *src) 
 {
+    if (src == NULL) {
+        sel4cp_dbg_puts("sel4cp_pd_create: invalid ELF program\n");
+        return -1;
+    }
+
     // Allocate a CNode for the new PD.
     if (alloc_state.cnode_idx >= POOL_NUM_CNODES) {
         return -1;
@@ -1109,7 +1100,7 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src, bool transfer_pool_objects)
     alloc_state.cnode_idx++;
     
     // Move capabilities for unused pool objects to the new PD, if required.
-    if (transfer_pool_objects) {
+    if (sel4cp_internal_has_protection_domain_control_access_right(src)) {
         if (sel4cp_internal_move_pool_caps(cnode_cap, BASE_TCB_POOL, &alloc_state.tcb_idx, POOL_NUM_TCBS, POOL_NUM_PD_TARGETS_CHILD) ||
             sel4cp_internal_move_pool_caps(cnode_cap, BASE_NOTIFICATION_POOL, &alloc_state.notification_idx, POOL_NUM_NOTIFICATIONS, POOL_NUM_PD_TARGETS_CHILD) ||
             sel4cp_internal_move_pool_caps(cnode_cap, BASE_CNODE_POOL, &alloc_state.cnode_idx, POOL_NUM_CNODES, POOL_NUM_PD_TARGETS_CHILD) ||
@@ -1354,11 +1345,8 @@ sel4cp_pd_create(sel4cp_pd pd, uint8_t *src, bool transfer_pool_objects)
         return -1;
     }
         
-    if (src != NULL) {
-        return sel4cp_pd_run_elf(src, pd);
-    }
-    
-    return 0;
+    // Start the specified program in the new PD.
+    return sel4cp_internal_pd_load_elf(src, pd);
 }
 
 

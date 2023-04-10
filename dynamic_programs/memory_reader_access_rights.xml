@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<access_rights loader_pd="child">
+    <scheduling priority="1" mcp="1" budget="1000" period="1000" />
+    <memory_region name="test_region" vaddr="0x5000000"  perms="r" cached="true" />
+</access_rights>

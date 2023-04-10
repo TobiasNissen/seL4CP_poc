@@ -1,4 +1,4 @@
-#define ELF_BUFFER_SIZE 0x40000
+#define ELF_BUFFER_SIZE 0x50000
 
 static uint8_t elf_buffer[ELF_BUFFER_SIZE];
 static uint8_t *elf_current_vaddr = elf_buffer;
@@ -63,10 +63,6 @@ elf_loader_handle_input(char c)
                 sel4cp_dbg_puts(" bytes\n");
                 return NULL; 
             }
-        
-            sel4cp_dbg_puts("elf_loader: ready to read ELF file of size ");
-            sel4cp_dbg_puthex64(elf_size);
-            sel4cp_dbg_puts(" bytes!\n");
         }
         else if (size_buffer_idx >= 16) {
             sel4cp_dbg_puts("elf_loader: the size of an ELF file can not be larger than 64 bytes (16 hexadecimal digits)\n");
@@ -85,8 +81,6 @@ elf_loader_handle_input(char c)
     elf_current_vaddr++;
     
     if (elf_current_vaddr - elf_buffer >= elf_size) {
-        sel4cp_dbg_puts("elf_loader: finished reading ELF file!\n");   
-        
         elf_current_vaddr = elf_buffer;
         elf_size = 0;
         return elf_buffer;

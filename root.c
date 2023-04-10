@@ -35,7 +35,7 @@ notified(sel4cp_channel channel)
     
     uint8_t *elf_vaddr = elf_loader_handle_input(c);
     if (elf_vaddr) {
-        if (sel4cp_pd_create(CHILD_PD_ID, elf_vaddr, true)) {
+        if (sel4cp_pd_create(CHILD_PD_ID, elf_vaddr)) {
             sel4cp_dbg_puts("root: failed to create a new PD with id ");
             sel4cp_dbg_puthex64(CHILD_PD_ID);
             sel4cp_dbg_puts(" and load the provided ELF file\n");
